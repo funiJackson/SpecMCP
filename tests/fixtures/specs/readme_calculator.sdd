@@ -1,0 +1,23 @@
+Spec: Calculator Add
+
+Purpose:
+  Add two finite numbers.
+
+Owns:
+  calculator.js
+
+Exposes:
+  Calculator.add(a, b)
+
+Must:
+  Return a + b.
+  Reject non-number inputs.
+
+Must not:
+  Round results.
+
+Scenario: add numbers
+  Given a is 2
+  And b is 3
+  When add is called
+  Then 5 is returned

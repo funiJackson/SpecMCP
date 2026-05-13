@@ -1,0 +1,13 @@
+Spec: Billing Module
+
+Purpose:
+  Own invoice creation, billing customer state, and provider interaction.
+
+Owns:
+  src/billing/*
+
+Must:
+  Normalize provider errors before they leave the module.
+
+Forbids:
+  stripe

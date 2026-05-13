@@ -1,0 +1,17 @@
+Spec: Unknown Sections Sampler
+
+Purpose:
+  Verify that non-canonical section names are preserved as unknown_sections
+  with their original casing and full line content.
+
+Custom Header:
+  This section's name isn't in the canonical SpecDD list.
+  It should appear in unknown_sections.
+
+Another Unknown:
+  Single-line body.
+
+Mixed Bag:
+  Body line one.
+  Body line two.
+  Body line three.

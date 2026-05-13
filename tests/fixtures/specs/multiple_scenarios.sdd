@@ -1,0 +1,20 @@
+Spec: Multiple Scenarios
+
+Purpose:
+  Demonstrate that one spec file can contain multiple Scenario blocks.
+
+Scenario: first scenario
+  Given x
+  When y
+  Then z
+
+Scenario: second scenario
+  Given p
+  When q
+  Then r
+
+Scenario: third scenario
+  Given a
+  And b
+  When c
+  Then d

@@ -1,0 +1,5 @@
+Spec: Invoice Feature
+
+Purpose:
+  Feature-level spec at the same directory depth as Module and Service. The
+  chain ordering must place this between Module and Service, NOT alphabetical.

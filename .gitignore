@@ -1,0 +1,55 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+share/python-wheels/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SpecDD: project-specific local overrides should never be committed
+.specdd/bootstrap.local.md
+
+# Benchmark corpus is fetched at test time, not vendored in source control
+tests/benchmark/
+
+# Upstream SpecDD reference repository — kept locally for reference but not
+# part of THIS repo. Clone github.com/specdd/specdd separately if needed.
+specdd-main/
+
+# Original v1 design artifacts. DESIGN.md (v2) is the source of truth;
+# plans/PR1.md documents the evolution. Backups stay local-only.
+DESIGN.DOC
+DESIGN.v1.md.bak

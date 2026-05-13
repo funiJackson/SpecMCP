@@ -1,0 +1,88 @@
+Spec: Invoice Service
+
+Platform: TypeScript/Node
+
+Purpose:
+  Coordinate invoice creation through an external billing provider.
+
+Structure:
+  src: Source code
+  tests: Test suite
+
+Owns:
+  invoice.ts
+  invoice.test.ts
+
+Can modify:
+  invoice.ts
+  invoice.test.ts
+
+Can read:
+  ../models/*
+  ../ports/*
+
+References:
+  ../models/invoice.sdd
+  ../ports/billing-provider.sdd
+
+Must:
+  Validate input before provider calls.
+  Persist invoice after provider success.
+  Normalize provider errors before returning them.
+
+Must not:
+  Call Stripe directly.
+  Calculate tax.
+  Send emails.
+
+Depends on:
+  InvoiceRepository
+  BillingCustomerRepository
+  BillingProviderPort
+
+Forbids:
+  stripe
+
+Exposes:
+  InvoiceService.createInvoice(input)
+
+Accepts:
+  CreateInvoiceInput
+
+Returns:
+  InvoiceResult
+
+Raises:
+  InvalidInvoiceError
+  BillingProviderError
+
+Handles:
+  provider timeout
+  unsupported currency
+  missing customer id
+
+Tasks:
+  [x] #1 Define createInvoice public method.
+  [ ] #2 Add validation for unsupported currency.
+  [!] #3 Decide whether provider timeout should retry automatically.
+  [?] #4 Confirm whether draft invoices can be deleted.
+  [-] #5 Skip PDF rendering; owned by invoice-pdf feature.
+
+Scenario: invalid invoice amount
+  Given an invoice input with amount less than or equal to zero
+  When createInvoice is called
+  Then the invoice is rejected
+  And the billing provider is not called
+
+Scenario: provider timeout
+  Given the billing provider takes too long
+  When createInvoice is called
+  Then a BillingProviderError is raised
+
+Example:
+  POST /invoices { customerId: "c_123", amount: 100 }
+
+Done when:
+  All scenarios have tests.
+  No forbidden dependencies are imported.
+  Public contract is preserved.

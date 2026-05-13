@@ -1,0 +1,29 @@
+Spec: 计算器服务 🧮
+
+Platform: Python
+
+Purpose:
+  Demonstrate Unicode support — CJK characters, emoji, mixed scripts in every
+  section family.
+
+Owns:
+  calculator.py
+  calculator_test.py
+
+Must:
+  Always return 🎯 accurate results.
+  支持中文输入和输出。
+
+Must not:
+  Crash on non-ASCII input.
+
+Tasks:
+  [ ] 添加加法 ➕
+  [x] 测试边界条件 🧪
+  [!] #1 文档化 API 限制 📚
+
+Scenario: 加法基础
+  Given a is 2
+  And b is 3
+  When add is called
+  Then 5 is returned

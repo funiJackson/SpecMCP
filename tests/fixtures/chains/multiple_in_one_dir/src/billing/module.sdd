@@ -1,0 +1,8 @@
+Spec: Billing Module
+
+Purpose:
+  Demonstrate same-directory disambiguation. Module spec is the broadest of
+  the three specs in this directory, so it should appear first in the chain.
+
+Forbids:
+  stripe

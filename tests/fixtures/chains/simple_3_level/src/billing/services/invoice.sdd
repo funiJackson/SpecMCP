@@ -1,0 +1,30 @@
+Spec: Invoice Service
+
+Purpose:
+  Coordinate invoice creation.
+
+Owns:
+  invoice.ts
+  invoice.test.ts
+
+Must:
+  Validate input before provider calls.
+  Persist invoice after provider success.
+
+Must not:
+  Call Stripe directly.
+  Calculate tax.
+
+Depends on:
+  InvoiceRepository
+  BillingProviderPort
+
+Tasks:
+  [ ] #1 Add validation for zero amount.
+  [ ] #2 Add unit tests for invalid input.
+
+Scenario: invalid invoice
+  Given invoice amount is zero
+  When createInvoice is called
+  Then validation fails
+  And provider is not called

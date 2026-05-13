@@ -1,0 +1,12 @@
+Spec: Billing Platform
+
+Purpose:
+  Internal platform for creating invoices and collecting payments.
+
+Must:
+  Represent money as integer minor units.
+  Access persistence only through repositories.
+
+Must not:
+  Put business logic in UI components.
+  Use floating point numbers for money.

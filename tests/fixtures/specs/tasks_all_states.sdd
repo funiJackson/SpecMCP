@@ -1,0 +1,15 @@
+Spec: Task States Sampler
+
+Purpose:
+  Exercises every TaskState symbol with and without IDs.
+
+Tasks:
+  [ ] open task without id
+  [x] done task without id
+  [-] skipped task without id
+  [!] blocked task without id
+  [?] needs-decision task without id
+  [ ] #1 open with id one
+  [x] #2 done with id two
+  [!] #42 blocked with id forty-two
+  [-] #100 skipped with id one-hundred

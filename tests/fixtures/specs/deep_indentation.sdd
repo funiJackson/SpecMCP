@@ -1,0 +1,19 @@
+Spec: Continuation Lines
+
+Purpose:
+  Verify bullet continuation behavior: lines deeper than the base indent are
+  joined to the previous bullet with a single space.
+
+Must:
+  This is bullet one
+    with a single continuation.
+  This is bullet two
+    with a continuation
+    and another continuation.
+  This is bullet three.
+  This is bullet four
+      with a deeply-indented continuation.
+
+Must not:
+  Lose the indentation pattern.
+  Collapse multiple bullets into one.

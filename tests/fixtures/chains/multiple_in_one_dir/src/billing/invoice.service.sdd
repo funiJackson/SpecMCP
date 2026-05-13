@@ -1,0 +1,8 @@
+Spec: Invoice Service
+
+Purpose:
+  Most-specific spec in this directory. With level precedence, this is
+  `nearest` for any target inside this directory.
+
+Owns:
+  code.ts
