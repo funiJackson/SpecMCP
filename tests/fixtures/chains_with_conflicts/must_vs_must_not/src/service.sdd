@@ -1,0 +1,9 @@
+Spec: Service
+
+Purpose:
+  Leaf spec that contradicts the platform's Must with a byte-identical
+  Must not. Vanishingly rare in practice but caught by
+  detect_must_vs_must_not when it happens.
+
+Must not:
+  Persist after success.

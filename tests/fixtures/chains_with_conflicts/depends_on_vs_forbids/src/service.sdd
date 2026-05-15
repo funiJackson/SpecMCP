@@ -1,0 +1,8 @@
+Spec: Invoice Service
+
+Purpose:
+  Leaf-level spec violating the platform's Forbids by declaring a
+  Depends on: stripe entry. detect_depends_on_vs_forbids should fire.
+
+Depends on:
+  stripe

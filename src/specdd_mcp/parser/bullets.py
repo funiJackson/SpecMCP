@@ -15,12 +15,18 @@ from __future__ import annotations
 from specdd_mcp.parser.lexer import Line
 
 
-def parse_bullets(body_lines: list[Line]) -> list[str]:
+def parse_bullets(body_lines: list[Line]) -> list[tuple[str, int]]:
     """Extract bullets from a list-shaped section's body.
+
+    Returns ``(text, line_no)`` pairs. ``line_no`` is the source line where the
+    bullet **started**; continuation lines (deeper indent) get merged into
+    the preceding bullet's text but the line stays anchored at the start.
+
+    Rules:
 
     - Blank lines are skipped.
     - The "base indent" is the minimum indent of any non-blank body line.
-    - Lines at the base indent are bullets.
+    - Lines at the base indent are new bullets.
     - Lines indented deeper than the base are continuations of the most recent
       bullet, joined with a single space.
 
@@ -32,14 +38,15 @@ def parse_bullets(body_lines: list[Line]) -> list[str]:
 
     base_indent = min(_measure_indent(line.text) for line in non_blank)
 
-    bullets: list[str] = []
+    bullets: list[tuple[str, int]] = []
     for line in non_blank:
         indent = _measure_indent(line.text)
         content = line.text.strip()
         if indent > base_indent and bullets:
-            bullets[-1] += " " + content
+            prev_text, prev_line = bullets[-1]
+            bullets[-1] = (prev_text + " " + content, prev_line)
         else:
-            bullets.append(content)
+            bullets.append((content, line.line_no))
 
     return bullets
 

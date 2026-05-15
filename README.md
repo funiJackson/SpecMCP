@@ -60,15 +60,15 @@ claude mcp add specdd "$(which specdd-mcp)"
 
 ### What ships today
 
-`specdd-mcp` currently exposes **2 of the 9 planned v1 tools**:
+`specdd-mcp` currently exposes **5 of the 9 planned v1 tools**:
 
 | Tool | Status | What it does |
 |---|---|---|
 | `mcp__specdd__parse_spec` | ✅ PR 2 | Parse a `.sdd` file or content into ParsedSpec |
 | `mcp__specdd__resolve_spec_chain` | ✅ PR 2 | Build the ordered chain of specs from repo root to a target |
-| `mcp__specdd__get_effective_constraints` | ⏳ PR 3 | Merged view of all inherited rules + conflicts |
-| `mcp__specdd__list_tasks` | ⏳ PR 3 | Cross-spec task discovery |
-| `mcp__specdd__update_task_status` | ⏳ PR 4 | Atomic batch task-state writes |
+| `mcp__specdd__list_tasks` | ✅ PR 3 | Cross-spec task discovery with state/text/id filters |
+| `mcp__specdd__get_effective_constraints` | ✅ PR 3 | Merged view of all inherited rules + 4 conflict detectors |
+| `mcp__specdd__update_task_status` | ✅ PR 4 | Atomic byte-faithful batch task-state writes |
 | `mcp__specdd__check_modification_scope` | ⏳ PR 5 | Pre-edit gate for write authority |
 | `mcp__specdd__validate_spec` | ⏳ PR 5 | Spec health check |
 | `mcp__specdd__list_specs` | ⏳ PR 7 | Repo-wide spec index |
@@ -167,6 +167,70 @@ if result.ok:
 else:
     print(f"Error {result.error}: {result.message}")
 ```
+
+## Modifying specs safely
+
+`update_task_status` (PR 4) is the **only** write surface in the server.
+Use it instead of `Edit` / `Write` / shell redirection whenever you need
+to flip a task state, because the tool guarantees:
+
+- **Byte-faithful preservation.** Every byte except the targeted state
+  symbol(s) is preserved exactly: line endings (LF or CRLF), UTF-8 BOM,
+  indentation (spaces or tabs), multi-byte characters, comments, blank
+  lines, trailing whitespace.
+- **Atomic write.** Writes go through a temp file + `os.replace`, so a
+  partially-written file is never observable.
+- **Cross-process serialization.** A per-spec lock (`fcntl.flock` on
+  POSIX, `msvcrt.locking` on Windows) blocks concurrent writers from
+  the same machine. Combined with the hash precondition, two agents
+  racing on the same file cannot both succeed silently.
+- **Stale-file detection.** Each call requires
+  `expected_content_hash` — the SHA-256 of the file's bytes as the
+  caller last observed them. If disk has drifted (an editor saved, an
+  agent wrote), the call fails with `STALE_FILE` rather than clobbering.
+- **Whole-batch atomicity.** Multi-update batches are all-or-nothing:
+  if *any* identifier in the batch is unresolvable (`TASK_NOT_FOUND` /
+  `TASK_AMBIGUOUS`), the file stays byte-identical to before the call.
+
+### Recommended caller pattern
+
+```python
+from specdd_mcp.parser import parse_spec
+from specdd_mcp.operations.hashing import content_hash
+from specdd_mcp.operations.mutate_tasks import update_task_status
+from specdd_mcp.types import Ok, UpdateRequest
+
+# 1. Parse to find the right task.
+parsed = parse_spec(path="src/billing/services/invoice.sdd")
+assert isinstance(parsed, Ok)
+
+# 2. Compute the file's SHA-256 — this is what the tool expects back as
+#    `expected_content_hash` to detect drift.
+expected = content_hash(open("src/billing/services/invoice.sdd", "rb").read())
+
+# 3. Apply a batch. Each UpdateRequest picks ONE identifier mode.
+result = update_task_status(
+    "src/billing/services/invoice.sdd",
+    expected_content_hash=expected,
+    updates=[
+        UpdateRequest(new_state="done", task_id="#1"),
+        UpdateRequest(new_state="blocked", task_line=42),
+    ],
+)
+
+# 4. Chain further updates using the returned hash — no re-parse needed.
+if isinstance(result, Ok):
+    next_hash = result.data.new_content_hash
+```
+
+### Recovering from `STALE_FILE` and `TASK_AMBIGUOUS`
+
+- **`STALE_FILE`** — `details.expected_hash` and `details.actual_hash`
+  show the drift. Re-parse the spec and retry with the fresh hash.
+- **`TASK_AMBIGUOUS`** — `details.candidates` lists every match in
+  source order with `{line, id, text, current_state}`. Retry with
+  `task_line` (the safest identifier) using the candidate the user
+  meant.
 
 ## License
 

@@ -271,3 +271,110 @@ The riskiest PR. `update_task_status` writes to files. Heavy emphasis on:
 - Per-file lock during write (belt-and-suspenders)
 
 After PR 4, `/specc` can complete its full loop: read → implement → mark done.
+
+---
+
+## Done — PR 3 retrospective
+
+Status: **complete**. All 17 commits landed; all acceptance criteria met.
+
+### Numbers
+
+| Metric | Target | Actual |
+|---|---|---|
+| New MCP tools | `list_tasks`, `get_effective_constraints` | ✅ both live; **4 / 9 v1 tools shipped** |
+| New tests | comprehensive | **+137** (348 → 545) |
+| Coverage | ≥ 90% | **100%** (856 stmts, 240 branches, 0 missed) |
+| `mypy --strict` | passes | ✅ 25 source files clean |
+| `ruff` | passes | ✅ src + tests clean |
+| Conflict detectors | 4 kinds (DESIGN §3.6) | ✅ all four, each with focused + fixture tests |
+| Performance smoke | 10-deep × 50 rules < 500 ms | ✅ ~50 ms measured |
+| Hours estimated | ~37 | matched closely |
+
+### Bugs caught / corner cases hit
+
+1. **`duplicate_parent_rule` mis-fired on sibling specs.** The C14 benchmark
+   integration test surfaced 14 spurious "drift" conflicts inside
+   `src/components/` where `todo-list.sdd`, `todo-item.sdd`, and
+   `todo-form.sdd` legitimately share Lit-element Must rules. They're peers,
+   not parent/child. Fix: added `_is_path_ancestor` check requiring the
+   earlier spec's directory to be a **strict prefix** of the later spec's
+   directory. Same-directory peers are no longer flagged. The benchmark
+   now produces zero high-signal conflicts, and 3 new tests lock this in.
+2. **PR 1 parser dropped per-bullet line numbers.** Discovered in C5 prep:
+   DESIGN §3.5 mandates exact `path:line` provenance on every `Constraint`,
+   but PR 1 `parse_bullets` only returned `list[str]` (text without lines).
+   Fix: changed return type to `list[tuple[str, int]]`, added
+   `ParsedSpec.bullet_lines` parallel dict (kept the existing `list[str]`
+   fields stable for MCP wire compatibility). Continuation lines anchor at
+   the bullet's starting line. PR 1 tests updated to the new shape.
+3. **macOS resource-fork pattern reused.** PR 1 had the AppleDouble fix in
+   `parse_spec`; PR 3 needed the same defense in `walks.py` and `globs.py`
+   (any directory walker must skip `._*` files). Centralized in
+   `walks.py.EXCLUDED_DIR_NAMES` + per-glob filter; both layers now
+   identical.
+4. **Test math error — duplicate detection cartesian explosion.** Wrote a
+   performance test expecting 200 conflicts from 5 levels × 20 identical
+   rules; got 4000. The detector emits one conflict per (current, earlier)
+   pair, so within a section with M identical-text rules across N specs,
+   the count is `Σ k × M²` for k ancestor pairs. Real specs don't repeat
+   the same rule M times inside one spec, so this only shows up in
+   synthetic stress fixtures — but I locked the exact count + math in the
+   test docstring so the formula is documented.
+5. **Test helper `_make_repo` assumed dir existed.** Same trip-up as PR 2:
+   passing `tmp_path / "subdir"` to a helper that calls `mkdir()` without
+   `parents=True` fails when the subdir doesn't exist yet. Fixed across
+   tests/test_tasks_op.py.
+
+### What's locked in for downstream PRs
+
+- **`operations/` layer.** Three modules (`walks`, `tasks`, `globs`, plus
+  the larger `merge` and `conflicts`) sit between `parser/` and
+  `server/tools.py`. The layering rule documented in
+  `operations/__init__.py`: `operations` imports from `parser` and `paths`,
+  never the other way. PR 7 will add `list_specs` and
+  `find_ownership_conflicts` here; PR 5 will add `validate_spec` rules.
+- **`walk_specs(directory, max_specs=1000)` is the single chokepoint for
+  cross-spec scans.** Every future tool that walks the repo (`list_specs`,
+  `find_ownership_conflicts`, `/specc:audit`) reuses this. The
+  `EXCLUDED_DIR_NAMES` set is the canonical "not SpecDD content" list.
+- **`Constraint.line` provenance is universally available** for every rule
+  surfaced by `get_effective_constraints`. PR 4 can quote `path:line` when
+  rejecting a write. PR 5's `validate_spec` will use the same.
+- **`/_is_path_ancestor` semantics** for distinguishing parent/child from
+  sibling relationships. PR 7's `find_ownership_conflicts` likely needs the
+  same helper.
+- **4 conflict-detection kinds** with stable invariants: `rule_a` = child /
+  violator, `rule_b` = parent / inherited. The `/specc` body and PR 5's
+  `check_modification_scope` rely on this. Three are high-signal (STOP);
+  `task_violates_must_not` is advisory.
+- **`bullet_lines` field on `ParsedSpec`.** Every future operation that
+  surfaces a bullet section's source line uses this. The parser orchestrator
+  populates it.
+- **`build_effective_constraints(chain, repo_root)` is the merge entry
+  point.** Both `get_effective_constraints` and PR 5's
+  `check_modification_scope` will call it.
+
+### Architecture at end of PR 3
+
+```
+specdd_mcp/
+├── __init__.py / __main__.py
+├── paths.py
+├── types.py
+├── parser/                  ← string/bytes → ParsedSpec | SpecChain
+│   ├── parse_spec.py, resolve_chain.py, lexer.py, sections.py
+│   ├── bullets.py / text.py / structure.py / tasks.py / scenarios.py
+│   └── levels.py
+├── operations/              ← cross-spec / filesystem work over ParsedSpec
+│   ├── walks.py             — bounded .sdd iteration
+│   ├── tasks.py             — list_tasks core
+│   ├── globs.py             — Owns/Can modify pattern expansion
+│   ├── merge.py             — chain → EffectiveConstraints
+│   └── conflicts.py         — 4 conflict detectors
+└── server/                  ← MCP protocol layer
+    ├── app.py, logging.py, tools.py
+```
+
+PR 4 adds `operations/hashing.py`, `operations/locks.py`, and
+`operations/mutate_tasks.py` — the first write surface.

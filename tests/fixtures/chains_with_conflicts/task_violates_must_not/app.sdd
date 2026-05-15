@@ -1,0 +1,11 @@
+Spec: Platform
+
+Purpose:
+  Demonstrate task_violates_must_not. App-level Must not forbids tax
+  calculation; the leaf spec has a task that mechanically restates it.
+
+  This kind is ADVISORY — high false-positive rate, /specc surfaces it
+  but does not stop.
+
+Must not:
+  Calculate tax.

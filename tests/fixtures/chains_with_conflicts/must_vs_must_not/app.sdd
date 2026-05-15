@@ -1,0 +1,9 @@
+Spec: Platform
+
+Purpose:
+  Demonstrate must_vs_must_not. App-level says "Persist after success";
+  the leaf spec asserts the opposite via Must not. Byte-identical text
+  → direct contradiction.
+
+Must:
+  Persist after success.

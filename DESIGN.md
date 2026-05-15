@@ -759,9 +759,9 @@ Separable from the design. Decide when coding starts.
 
 Updated answers in **bold**.
 
-1. **Task identifier resolution for `update_task_status`.** **Resolved: support `task_id`, `task_line`, and `task_text_prefix` in `updates[]`. Ambiguity returns `TASK_AMBIGUOUS` with `details.candidates` populated so the caller can retry with a specific identifier.**
+1. **Task identifier resolution for `update_task_status`.** **Resolved: support `task_id`, `task_line`, and `task_text_prefix` in `updates[]`. Ambiguity returns `TASK_AMBIGUOUS` with `details.candidates` populated so the caller can retry with a specific identifier. Implemented in PR 4 (`operations/mutate_tasks.resolve_task_identifier`): exactly one identifier per `UpdateRequest` enforced (zero or two-plus → `INVALID_INPUT`); `task_text_prefix` is case-sensitive `str.startswith`; candidates are emitted in source-line order with `{line, id, text, current_state}` — line is the safest disambiguator and the recommended retry mode. `details.identifier` echoes the caller's input verbatim so error UI can include it without extra tracking.**
 
-2. **Glob expansion semantics for `Owns:` / `Can modify:`.** **Resolved: snapshot expansion at call time. Both the literal pattern and the current matches are returned (see `effective_write_scope` shape). Documented that scope is a snapshot; callers refresh as needed.**
+2. **Glob expansion semantics for `Owns:` / `Can modify:`.** **Resolved: snapshot expansion at call time. Both the literal pattern and the current matches are returned (see `effective_write_scope` shape). Documented that scope is a snapshot; callers refresh as needed. Implemented in PR 3 (`operations/globs.expand_pattern`): POSIX paths only, files-only filtering, `EXCLUDED_DIR_NAMES` honored (no `.venv` / `.git` / `node_modules` matches), AppleDouble metadata excluded, paths escaping `repo_root` silently skipped. Windows backslashes normalized defensively.**
 
 3. **`validate_spec` strictness on unknown sections.** **Resolved: warning, not error. SpecDD intentionally allows extension.**
 
@@ -773,7 +773,7 @@ Updated answers in **bold**.
 
 7. **`dry_run` mode on write tools.** **Resolved: removed. The diff in the success result already gives full visibility. Avoids doubling the contract of every write tool.**
 
-8. **Concurrency / stale-file safety.** **Resolved: every write requires `expected_content_hash` from the most recent parse. `STALE_FILE` returned on mismatch. Per-file lock during write as belt-and-suspenders.**
+8. **Concurrency / stale-file safety.** **Resolved: every write requires `expected_content_hash` from the most recent parse. `STALE_FILE` returned on mismatch. Per-file lock during write as belt-and-suspenders. Implemented in PR 4 (`operations/hashing.content_hash` + `operations/locks.file_lock` + `operations/mutate_tasks.update_task_status`): SHA-256 over the raw bytes (BOM included); per-file sidecar `<spec>.sdd.lock` acquired with `fcntl.flock(LOCK_EX)` on POSIX and `msvcrt.locking(LK_LOCK)` on Windows; lock holds across read → hash-check → parse → resolve → write so two processes serialize correctly. Write uses temp-file + `Path.replace` for atomicity. `STALE_FILE` details carry `expected_hash`, `actual_hash`, and `path`; whole-batch atomicity guarantees the file is byte-identical when **any** pre-write check fails (stale hash, unresolvable identifier, empty updates). Validated by a real subprocess race test (N=4 workers, exactly one Ok, three STALE_FILE).**
 
 9. **Forward compatibility when SpecDD evolves in-section semantics (e.g. priority markers on tasks).** **New. Proposed: `ParsedSpec.parser_version` lets callers know what they're getting. Surface `MIGHT_BE_NEWER_SPECDD` as a warning when unrecognized in-section markup is detected (e.g. unexpected non-whitespace after a task state symbol).**
 

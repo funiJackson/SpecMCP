@@ -199,6 +199,14 @@ class ParsedSpec(BaseModel):
     # validate_spec / update_task_status / etc. to point at exact locations.
     positions: dict[KnownSection, SectionPosition] = Field(default_factory=dict)
 
+    # Per-bullet line numbers for list-shaped sections (``must``, ``must_not``,
+    # ``owns``, ``forbids``, ``depends_on``, etc.). Parallel arrays: the
+    # ``i``-th entry in ``must`` corresponds to ``bullet_lines["must"][i]``.
+    # Used by ``operations/merge.py`` to build ``Constraint`` objects with
+    # exact ``path:line`` provenance (DESIGN §3.5 mandates this). Continuation
+    # lines anchor at the bullet's start.
+    bullet_lines: dict[KnownSection, list[int]] = Field(default_factory=dict)
+
     # Sections whose names aren't in the canonical list. Preserved with
     # full content + line numbers for forward compatibility.
     unknown_sections: list[UnknownSection] | None = None
@@ -367,3 +375,54 @@ Result: TypeAlias = "Ok[T] | Err"
 
 ParseSpecResult: TypeAlias = "Ok[ParsedSpec] | Err"
 ResolveChainResult: TypeAlias = "Ok[SpecChain] | Err"
+
+
+# ---------------------------------------------------------------------------
+# update_task_status — batch task-state mutation (DESIGN §5.5)
+# ---------------------------------------------------------------------------
+
+
+class UpdateRequest(BaseModel):
+    """One desired state change within a batch ``update_task_status`` call.
+
+    The caller picks exactly one of ``task_id`` / ``task_line`` /
+    ``task_text_prefix`` to identify which task to update — the resolver
+    enforces this and surfaces ``INVALID_INPUT`` otherwise.
+    """
+
+    new_state: TaskState
+    task_id: str | None = None
+    task_line: int | None = None
+    task_text_prefix: str | None = None
+
+
+class UpdateApplied(BaseModel):
+    """One element of ``UpdateResult.applied`` — the post-update task plus
+    the state it carried before the update fired."""
+
+    task: ParsedTask
+    previous_state: TaskState
+
+
+class UpdateResult(BaseModel):
+    """Success payload for ``update_task_status``.
+
+    Attributes:
+        spec_path: The spec that was modified (caller-supplied form).
+        applied: One entry per update in batch order. Each carries the
+            resolved :class:`ParsedTask` (as observed before the write) and
+            the state it had pre-update — useful for "undo" workflows.
+        diff: Unified diff between the pre- and post-write file contents.
+            Empty when the batch was effectively a no-op (e.g. every
+            update set a task to its current state).
+        new_content_hash: SHA-256 of the bytes just written. Callers feed
+            this back as ``expected_content_hash`` on the next call.
+    """
+
+    spec_path: str
+    applied: list[UpdateApplied] = Field(default_factory=list)
+    diff: str
+    new_content_hash: str
+
+
+UpdateTaskStatusResult: TypeAlias = "Ok[UpdateResult] | Err"

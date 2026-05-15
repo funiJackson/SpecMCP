@@ -1,0 +1,8 @@
+Spec: Service
+
+Purpose:
+  Leaf spec whose task text contains a mechanical substring of the
+  app-level Must not. The detect_task_violates_must_not check fires.
+
+Tasks:
+  [ ] Add Calculate tax helper for the service.

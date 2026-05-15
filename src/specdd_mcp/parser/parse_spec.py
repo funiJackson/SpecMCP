@@ -110,6 +110,7 @@ def parse_spec(
     # 5. Assemble the spec.
     warnings: list[str] = list(lex_result.warnings)
     positions: dict[KnownSection, SectionPosition] = {}
+    bullet_lines: dict[KnownSection, list[int]] = {}
     fields: dict[str, Any] = {
         "path": effective_path,
         "name": "",
@@ -145,7 +146,9 @@ def parse_spec(
     for key, attr in _BULLET_FIELDS:
         section = _first_or_warn(detected.known.get(key, []), key, warnings)
         if section is not None:
-            fields[attr] = parse_bullets(section.body_lines)
+            bullets = parse_bullets(section.body_lines)
+            fields[attr] = [text for text, _ in bullets]
+            bullet_lines[key] = [line for _, line in bullets]
             positions[key] = _to_position(section)
 
     # --- Tasks ---
@@ -167,16 +170,21 @@ def parse_spec(
     examples_sections = detected.known.get("examples", [])
     if examples_sections:
         examples: list[str] = []
+        examples_lines: list[int] = []
         for section in examples_sections:
-            examples.extend(parse_bullets(section.body_lines))
+            for text, line_no in parse_bullets(section.body_lines):
+                examples.append(text)
+                examples_lines.append(line_no)
         fields["examples"] = examples
+        bullet_lines["examples"] = examples_lines
         positions["examples"] = SectionPosition(
             start_line=examples_sections[0].start_line,
             end_line=examples_sections[-1].end_line,
         )
 
-    # --- Positions and unknown sections ---
+    # --- Positions, bullet lines, unknown sections ---
     fields["positions"] = positions
+    fields["bullet_lines"] = bullet_lines
     if detected.unknown:
         fields["unknown_sections"] = [
             UnknownSection(

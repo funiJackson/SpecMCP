@@ -1,0 +1,9 @@
+Spec: Platform
+
+Purpose:
+  Demonstrate duplicate_parent_rule. The app-level Must rule below is
+  restated byte-identically by the leaf spec — drift risk because the
+  copy won't auto-update if this version changes.
+
+Must:
+  Validate input before provider calls.

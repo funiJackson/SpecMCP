@@ -339,6 +339,39 @@ def test_parses_from_disk_path(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_bullet_lines_populated_for_every_bullet_section() -> None:
+    """`bullet_lines` is the per-rule line number map used by merge.py to
+    build Constraint(rule, source, line) tuples with exact provenance."""
+    source = (
+        "Spec: X\n"          # line 1
+        "\n"                  # line 2
+        "Must:\n"             # line 3
+        "  Rule one.\n"       # line 4
+        "  Rule two.\n"       # line 5
+        "  Rule three\n"      # line 6
+        "    continuation.\n" # line 7 (continuation, anchors at line 6)
+        "\n"                  # line 8
+        "Forbids:\n"          # line 9
+        "  stripe\n"          # line 10
+    )
+    result = parse_spec(content=source)
+    assert isinstance(result, Ok)
+    spec = result.data
+    # Must has 3 bullets (last is multi-line, anchored at line 6).
+    assert spec.must == ["Rule one.", "Rule two.", "Rule three continuation."]
+    assert spec.bullet_lines["must"] == [4, 5, 6]
+    # Forbids has 1 bullet.
+    assert spec.forbids == ["stripe"]
+    assert spec.bullet_lines["forbids"] == [10]
+
+
+def test_bullet_lines_empty_when_no_bullet_sections_present() -> None:
+    """If a spec has no bullet-shaped sections, bullet_lines stays empty."""
+    result = parse_spec(content="Spec: X\n\nPurpose:\n  No bullets here.\n")
+    assert isinstance(result, Ok)
+    assert result.data.bullet_lines == {}
+
+
 def test_tasks_preserve_indent_and_raw_through_orchestrator() -> None:
     source = "Spec: X\n\nTasks:\n  [ ] first\n    [x] deeper indent\n"
     result = parse_spec(content=source)

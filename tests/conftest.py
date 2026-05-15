@@ -26,6 +26,13 @@ FIXTURES_DIR: Path = Path(__file__).parent / "fixtures" / "specs"
 CHAINS_DIR: Path = Path(__file__).parent / "fixtures" / "chains"
 """Directory of committed multi-file SpecDD trees for chain resolution tests."""
 
+CONFLICT_FIXTURES_DIR: Path = (
+    Path(__file__).parent / "fixtures" / "chains_with_conflicts"
+)
+"""One subdirectory per conflict kind, each a minimal spec tree that fires
+exactly that kind. Used by ``test_conflict_fixtures.py`` to lock in detector
+behavior against real files (not just inline strings)."""
+
 # ---------------------------------------------------------------------------
 # Benchmark corpus (live clone with vendored snapshot fallback)
 # ---------------------------------------------------------------------------

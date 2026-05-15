@@ -50,10 +50,14 @@ claude
 In the session, run `/mcp`. Expected:
 
 - [ ] `specdd` appears in the connected-servers list
-- [ ] Two tools listed:
+- [ ] Five tools listed:
   - [ ] `parse_spec`
   - [ ] `resolve_spec_chain`
-- [ ] Each tool's description begins with "Prefer this over..."
+  - [ ] `list_tasks`
+  - [ ] `get_effective_constraints`
+  - [ ] `update_task_status`
+- [ ] Each read-tool description begins with "Prefer this over..." and
+      `update_task_status` advertises itself as "the **only** write tool"
 
 If the server shows as failed/disconnected:
 
@@ -122,7 +126,172 @@ Expected:
 - [ ] The order is NOT alphabetical by filename
       (alphabetical would put feature → invoice.service → module)
 
-## 7. Cleanup
+## 7. Smoke test: list_tasks (PR 3)
+
+Ask Claude:
+
+> Use `mcp__specdd__list_tasks` on the repo root of
+> `tests/fixtures/chains/simple_3_level/`. Show me the open tasks.
+
+Expected:
+
+- [ ] Returns 2 open tasks (both from `invoice.sdd` in the services dir)
+- [ ] Each task has `state == "open"`, an `id` like `"#1"` / `"#2"`,
+      and a `source` ending in `/invoice.sdd`
+- [ ] Default `states` filter is `["open"]` — done/skipped tasks NOT included
+
+Then ask Claude to filter:
+
+> Same call but with `include_blocked=true`.
+
+- [ ] The result set expands to include `blocked` and `needs_decision` task
+      states (any present in fixtures get surfaced).
+
+## 8. Smoke test: get_effective_constraints (PR 3) — **THE main `/specc` tool**
+
+Ask Claude:
+
+> Use `mcp__specdd__get_effective_constraints` on
+> `tests/fixtures/chains/simple_3_level/src/billing/services/invoice.ts`.
+
+Expected:
+
+- [ ] Response has a full `EffectiveConstraints` shape with:
+  - [ ] `chain_summary` listing 3 specs (`Billing Platform`, `Billing Module`,
+        `Invoice Service`)
+  - [ ] `must` containing 5 rules, each carrying `source` + non-zero `line`
+  - [ ] `must_not` containing 4 rules
+  - [ ] `forbids == ["stripe"]` from `src/billing/module.sdd`
+  - [ ] `effective_write_scope` with glob `src/billing/*` expanded plus
+        the literal `invoice.ts` / `invoice.test.ts`
+  - [ ] `write_authority_source ==
+        "src/billing/services/invoice.sdd"` (leaf wins)
+  - [ ] `tasks` listing 2 open tasks
+  - [ ] `conflicts == []` (canonical fixture is clean)
+
+Now test conflict surfacing on one of the conflict fixtures:
+
+> Use `mcp__specdd__get_effective_constraints` on
+> `tests/fixtures/chains_with_conflicts/depends_on_vs_forbids/src/code.ts`.
+> What conflicts does it surface?
+
+- [ ] `conflicts` has exactly one entry, kind=`depends_on_vs_forbids`
+- [ ] Both sides carry source paths AND line numbers
+- [ ] Claude correctly identifies this as a STOP-level conflict (not advisory)
+
+## 9. Smoke test: update_task_status (PR 4) — **the only write tool**
+
+This is the highest-risk surface in the server: it touches files on disk.
+The e2e gate exercises (a) byte-preservation, (b) the STALE_FILE recovery
+loop, and (c) the TASK_AMBIGUOUS recovery loop in a real session.
+
+**Pre-step — prep a sandbox spec.** Don't update the canonical fixture
+in place; copy it so step 9.5 leaves the repo clean.
+
+```bash
+mkdir -p /tmp/specdd-e2e
+cp tests/fixtures/chains/simple_3_level/src/billing/services/invoice.sdd \
+   /tmp/specdd-e2e/invoice.sdd
+cat /tmp/specdd-e2e/invoice.sdd  # note the open tasks `[ ] #1` / `[ ] #2`
+```
+
+### 9.1 Happy path: flip one task to done
+
+Ask Claude:
+
+> Use `mcp__specdd__parse_spec` with `path=/tmp/specdd-e2e/invoice.sdd`
+> to find the open tasks. Then compute the SHA-256 of the file's bytes
+> and call `mcp__specdd__update_task_status` to mark task `#1` as done.
+
+Expected:
+
+- [ ] Claude reads the file, finds two open tasks `#1` / `#2`
+- [ ] Claude computes the file's SHA-256 and passes it as
+      `expected_content_hash`
+- [ ] Tool returns `ok: true` with:
+  - [ ] `data.applied[0].previous_state == "open"`
+  - [ ] `data.applied[0].task.id == "#1"`
+  - [ ] `data.diff` showing exactly one `-  [ ] #1` / `+  [x] #1` pair
+  - [ ] `data.new_content_hash` is a 64-char hex string
+- [ ] Inspect the file on disk:
+      ```bash
+      diff <(cat tests/fixtures/chains/simple_3_level/src/billing/services/invoice.sdd) \
+           /tmp/specdd-e2e/invoice.sdd
+      ```
+      Diff shows **only** the `[ ] #1` → `[x] #1` line. No BOM/CRLF/
+      whitespace drift on unrelated lines.
+
+### 9.2 Chained update via returned hash
+
+Ask Claude:
+
+> Now mark task `#2` as `blocked`, using the `new_content_hash` from
+> the previous response as `expected_content_hash` — don't re-read the
+> file.
+
+Expected:
+
+- [ ] Claude passes the returned hash (no fresh `parse_spec` / read)
+- [ ] Tool returns `ok: true`
+- [ ] On disk: `[x] #1 …` and `[!] #2 …`
+
+### 9.3 STALE_FILE recovery loop
+
+Modify the file out-of-band to simulate a concurrent editor save:
+
+```bash
+printf "\n# trailing comment\n" >> /tmp/specdd-e2e/invoice.sdd
+```
+
+Ask Claude:
+
+> Set task `#1` back to `open` using the `new_content_hash` from step 9.2.
+
+Expected:
+
+- [ ] Tool returns `ok: false`, `error: "STALE_FILE"`
+- [ ] `details.expected_hash` matches the hash from step 9.2
+- [ ] `details.actual_hash` is **different** (the trailing comment changed
+      the file)
+- [ ] Claude recognises the situation and re-parses the file to get the
+      fresh hash, then retries — second call returns `ok: true`
+
+### 9.4 TASK_AMBIGUOUS recovery loop
+
+Append two tasks sharing a prefix:
+
+```bash
+cat <<'EOF' >> /tmp/specdd-e2e/invoice.sdd
+
+Tasks:
+  [ ] #10 Add validation for currency
+  [ ] #11 Add validation for amount
+EOF
+```
+
+Ask Claude:
+
+> Mark the task starting with "Add validation" as `done`.
+
+Expected:
+
+- [ ] Tool returns `ok: false`, `error: "TASK_AMBIGUOUS"`
+- [ ] `details.candidates` lists both tasks, each with `line`, `id`,
+      `text`, `current_state` keys
+- [ ] Claude reads the candidates, picks the one the user meant, and
+      retries with `task_line` (NOT `task_text_prefix`) — the second
+      call returns `ok: true`
+
+### 9.5 Cleanup the sandbox
+
+```bash
+rm -rf /tmp/specdd-e2e
+```
+
+- [ ] Canonical fixture under `tests/fixtures/chains/simple_3_level/` is
+      byte-identical to the committed version (`git status` is clean)
+
+## 10. Cleanup
 
 ```bash
 claude mcp remove specdd

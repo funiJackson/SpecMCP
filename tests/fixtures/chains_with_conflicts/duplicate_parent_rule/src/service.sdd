@@ -1,0 +1,8 @@
+Spec: Service
+
+Purpose:
+  Leaf spec that duplicates the parent's Must rule verbatim. The
+  detect_duplicate_parent_rule check fires for this pair.
+
+Must:
+  Validate input before provider calls.

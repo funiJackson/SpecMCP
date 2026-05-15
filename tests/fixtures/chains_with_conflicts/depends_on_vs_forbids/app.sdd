@@ -1,0 +1,8 @@
+Spec: Billing Platform
+
+Purpose:
+  Demonstrate the depends_on_vs_forbids conflict. App-level rules forbid
+  using `stripe` as a dependency anywhere in the platform.
+
+Forbids:
+  stripe
