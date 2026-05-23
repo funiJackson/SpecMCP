@@ -523,7 +523,7 @@ Result<{
 
 ### 5.7 `validate_spec`
 
-**Status: partially implemented (PR 5) — single-file rules only.** The nine single-file rules below run today. The three cross-spec rules (`DUPLICATE_PARENT_RULE`, `CONFLICTING_INHERITANCE`, `TASK_VIOLATES_MUSTNOT`) are deferred to PR 7; `check_inheritance: true` is accepted now for forward-compatibility but adds zero issues until then.
+**Status: implemented (PR 5 single-file, PR 7 cross-spec).** All nine single-file rules run on every call. The three cross-spec rules (`DUPLICATE_PARENT_RULE`, `CONFLICTING_INHERITANCE`, `TASK_VIOLATES_MUSTNOT`) now activate when `check_inheritance: true` is passed with a `repo_root`: the rule resolves the target's chain, merges it via `get_effective_constraints`' machinery, and surfaces the conflicts where the validated spec is the violator. Without `repo_root` (or for raw `content` whose chain can't resolve) cross-spec analysis degrades silently — the single-file rules still run.
 
 **Purpose.** Static check of a single spec file or raw content. Surfaces syntax issues, malformed tasks, unknown sections (warnings), and optionally cross-spec inheritance issues.
 

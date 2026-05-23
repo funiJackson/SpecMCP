@@ -70,7 +70,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 | `mcp__specdd__get_effective_constraints` | ✅ PR 3 | Merged view of all inherited rules + 4 conflict detectors |
 | `mcp__specdd__update_task_status` | ✅ PR 4 | Atomic byte-faithful batch task-state writes |
 | `mcp__specdd__check_modification_scope` | ✅ PR 5 | Pre-edit gate for write authority |
-| `mcp__specdd__validate_spec` | ✅ PR 5 | Spec health check (single-file rules; cross-spec deferred to PR 7) |
+| `mcp__specdd__validate_spec` | ✅ PR 5 + PR 7 | Spec health check — nine single-file rules plus three cross-spec inheritance rules |
 | `mcp__specdd__list_specs` | ⏳ PR 7 | Repo-wide spec index |
 | `mcp__specdd__find_ownership_conflicts` | ⏳ PR 7 | Multi-owner overlap detection |
 
@@ -272,18 +272,24 @@ has no SpecDD coverage, or no spec in its chain declares write authority.
 ## Validating specs
 
 `validate_spec` is the post-implementation health check (`/specc` step 8). It
-runs nine single-file rules and returns structured issues with `path:line`
-provenance.
+runs nine single-file rules — and, with `check_inheritance=True` plus a
+`repo_root`, three cross-spec rules — returning structured issues with
+`path:line` provenance.
 
 ```python
+from pathlib import Path
+
 from specdd_mcp.operations.validation import run_validation
 from specdd_mcp.parser.parse_spec import parse_spec
 
 spec = parse_spec(path="src/billing/services/invoice.sdd").data
-result = run_validation(spec, check_inheritance=True)
+# Pass repo_root to activate the cross-spec inheritance rules; omit it
+# (or validate raw content) to run single-file rules only.
+result = run_validation(spec, check_inheritance=True, repo_root=Path("."))
 
 result.summary   # {"errors": 0, "warnings": 0}  → clean
-result.issues    # [ValidationIssue(severity, code, message, line?), ...]
+result.issues    # [ValidationIssue(severity, code, message, line?,
+                 #                   related_spec?, related_line?), ...]
 ```
 
 | Code | Severity | Triggers when |
@@ -297,11 +303,17 @@ result.issues    # [ValidationIssue(severity, code, message, line?), ...]
 | `EMPTY_SECTION` | warning | A known section header with no content. |
 | `LONG_SPEC` | warning | File exceeds `max_lines` (default 80). |
 | `OWNERSHIP_OUTSIDE_DIRECTORY` | warning | An `Owns:`/`Can modify:` pattern escapes the spec's subtree. |
+| `DUPLICATE_PARENT_RULE` | warning | The spec restates an ancestor's `Must`/`Must not` verbatim (drift risk). |
+| `CONFLICTING_INHERITANCE` | warning | The spec's `Depends on:` pulls in something an ancestor `Forbids:`. |
+| `TASK_VIOLATES_MUSTNOT` | warning | A task mechanically restates an inherited `Must not:` (advisory; false positives expected). |
 
-`check_inheritance=true` is accepted today but adds zero issues — the cross-spec
-rules (`DUPLICATE_PARENT_RULE`, `CONFLICTING_INHERITANCE`,
-`TASK_VIOLATES_MUSTNOT`) land in PR 7. Passing it now keeps `/specc` callers
-forward-compatible with no signature change later.
+The last three are the **cross-spec** rules — they run only when
+`check_inheritance=True` is passed with a `repo_root`. Each resolves the
+target's spec chain, finds the conflicts where the validated spec is the
+violator, and points `related_spec` / `related_line` at the inherited rule so
+`/specc` can quote both sides. Without a `repo_root` (or when validating raw
+`content` whose chain can't resolve) they degrade silently — the single-file
+rules still run.
 
 ## License
 

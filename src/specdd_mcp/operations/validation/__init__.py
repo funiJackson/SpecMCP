@@ -5,10 +5,15 @@ ultimately funnels through :func:`run_validation` here. The registry
 pattern keeps each rule a pure callable so:
 
   * Rules can be unit-tested in isolation (no MCP, no parser cascade).
-  * Adding a rule is one line in either :data:`SINGLE_FILE_RULES` or
-    :data:`CROSS_SPEC_RULES`. No edits to ``run_validation``'s body.
-  * PR 7 lights up cross-spec rules by appending to the second list.
-    The runner signature stays stable across PR 5 → PR 7.
+  * Adding a rule is one line in either :data:`SINGLE_FILE_RULES`
+    (:mod:`~specdd_mcp.operations.validation.single_file`) or
+    :data:`CROSS_SPEC_RULES`
+    (:mod:`~specdd_mcp.operations.validation.cross_spec`). No edits to
+    ``run_validation``'s body.
+  * PR 7 populated the cross-spec registry. The runner signature stayed
+    stable across PR 5 → PR 7: cross-spec rules keep the
+    ``(ParsedSpec, repo_root)`` shape and the runner still gates them on
+    ``check_inheritance``.
 
 Rule ordering is intentionally **not** semantically significant: any
 rule's findings are merged into one flat list and downstream callers
@@ -21,13 +26,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from specdd_mcp.operations.validation.cross_spec import CROSS_SPEC_RULES
 from specdd_mcp.operations.validation.single_file import (
     DEFAULT_MAX_LINES,
     SINGLE_FILE_RULES,
     check_long_spec,
 )
 from specdd_mcp.operations.validation.types import (
-    CrossSpecRule,
     SingleFileRule,
 )
 from specdd_mcp.types import (
@@ -42,14 +47,6 @@ __all__ = [
     "SINGLE_FILE_RULES",
     "run_validation",
 ]
-
-
-#: Cross-spec rule registry. Empty in PR 5; populated in PR 7 with
-#: ``DUPLICATE_PARENT_RULE``, ``CONFLICTING_INHERITANCE``,
-#: ``TASK_VIOLATES_MUSTNOT``. The ``check_inheritance`` parameter to
-#: :func:`run_validation` accepts ``True`` even now so callers can pass
-#: it consistently without a breaking signature change between PRs.
-CROSS_SPEC_RULES: list[CrossSpecRule] = []
 
 
 def run_validation(
