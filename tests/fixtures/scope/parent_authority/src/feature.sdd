@@ -1,0 +1,9 @@
+Spec: Authority-Free Feature
+
+Purpose:
+  A nearer spec that scopes intent but declares no write authority of
+  its own. The chain walk must skip past it to the parent app.sdd to
+  find the spec that actually grants Owns/Can modify.
+
+Must:
+  Keep the directory's behavior documented.

@@ -20,11 +20,13 @@ import pytest
 from specdd_mcp.server.app import mcp
 from specdd_mcp.server.logging import TOOL_LOGGER
 from specdd_mcp.server.tools import (
+    check_modification_scope,
     get_effective_constraints,
     list_tasks,
     parse_spec,
     resolve_spec_chain,
     update_task_status,
+    validate_spec,
 )
 
 # ---------------------------------------------------------------------------
@@ -717,3 +719,139 @@ async def test_update_task_status_tool_has_agent_pitch() -> None:
     # asking the user.
     assert "STALE_FILE" in tool.description
     assert "TASK_AMBIGUOUS" in tool.description
+
+
+# ---------------------------------------------------------------------------
+# validate_spec (PR 5)
+# ---------------------------------------------------------------------------
+
+
+def test_validate_spec_clean_content_returns_no_issues() -> None:
+    result = validate_spec(content="Spec: Clean\n\nPurpose:\n  Be tidy.\n")
+    assert result["ok"] is True
+    assert result["data"]["summary"]["errors"] == 0
+
+
+def test_validate_spec_surfaces_error_rules() -> None:
+    # No Spec: header (error), bad task state (error), duplicate id (error).
+    # The bad-state line carries no id: the parser drops malformed task
+    # lines wholesale, so duplicate-id detection runs over the two valid
+    # `#1` tasks below it rather than the dropped line.
+    result = validate_spec(
+        content="Tasks:\n  [y] bad state\n  [ ] #1 first\n  [ ] #1 dupe\n"
+    )
+    assert result["ok"] is True
+    codes = {i["code"] for i in result["data"]["issues"]}
+    assert {"MISSING_SPEC_HEADER", "INVALID_TASK_STATE", "DUPLICATE_TASK_ID"} <= codes
+    assert result["data"]["summary"]["errors"] >= 3
+
+
+def test_validate_spec_max_lines_overrides_long_spec_threshold() -> None:
+    body = "Spec: Big\n" + "".join(f"Must:\n  rule {i}\n" for i in range(20))
+    # Default 80 doesn't fire; a tight max_lines does.
+    assert all(
+        i["code"] != "LONG_SPEC"
+        for i in validate_spec(content=body)["data"]["issues"]
+    )
+    tight = validate_spec(content=body, max_lines=5)
+    assert any(i["code"] == "LONG_SPEC" for i in tight["data"]["issues"])
+
+
+def test_validate_spec_check_inheritance_accepted_but_noop() -> None:
+    """PR 5: check_inheritance=true is accepted and adds zero issues."""
+    clean = "Spec: X\n\nPurpose:\n  y.\n"
+    without = validate_spec(content=clean)["data"]["issues"]
+    with_inherit = validate_spec(content=clean, check_inheritance=True)["data"]["issues"]
+    assert without == with_inherit
+
+
+def test_validate_spec_propagates_parser_error(tmp_path: Path) -> None:
+    result = validate_spec(path=str(tmp_path / "missing.sdd"))
+    assert result["ok"] is False
+    assert result["error"] == "NOT_FOUND"
+
+
+def test_validate_spec_both_inputs_returns_invalid_input() -> None:
+    result = validate_spec(path="x.sdd", content="Spec: X\n")
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+
+
+def test_validate_spec_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("simulated validation bug")
+
+    monkeypatch.setattr("specdd_mcp.server.tools._run_validation", _raise)
+    result = validate_spec(content="Spec: X\n")
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated validation bug" in result["message"]
+    assert result["details"]["exception_type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_validate_spec_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "validate_spec" in [t.name for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# check_modification_scope (PR 5)
+# ---------------------------------------------------------------------------
+
+
+def _scope_repo(tmp_path: Path) -> Path:
+    """A tiny repo: a root spec owning *.ts, plus one existing .ts file."""
+    (tmp_path / ".specdd").mkdir()
+    (tmp_path / "feature.sdd").write_text(
+        "Spec: F\n\nOwns:\n  *.ts\n", encoding="utf-8"
+    )
+    (tmp_path / "code.ts").write_text("export const x = 1;\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_check_modification_scope_classifies_allowed_and_out_of_scope(
+    tmp_path: Path,
+) -> None:
+    repo = _scope_repo(tmp_path)
+    result = check_modification_scope(
+        target="code.ts",
+        proposed_files=["code.ts", "script.py"],
+        repo_root=str(repo),
+    )
+    assert result["ok"] is True
+    assert result["data"]["allowed"] == ["code.ts"]
+    assert result["data"]["out_of_scope"] == ["script.py"]
+    assert result["data"]["authority_source"] == "feature.sdd"
+
+
+def test_check_modification_scope_relative_target_no_repo_invalid() -> None:
+    result = check_modification_scope(
+        target="code.ts", proposed_files=["code.ts"]
+    )
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+
+
+def test_check_modification_scope_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(**_: object) -> None:
+        raise RuntimeError("simulated scope bug")
+
+    monkeypatch.setattr(
+        "specdd_mcp.server.tools._check_modification_scope", _raise
+    )
+    result = check_modification_scope(target="/x", proposed_files=[])
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated scope bug" in result["message"]
+    assert result["details"]["exception_type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_check_modification_scope_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "check_modification_scope" in [t.name for t in tools]

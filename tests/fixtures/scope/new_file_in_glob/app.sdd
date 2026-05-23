@@ -1,0 +1,7 @@
+Spec: Billing App
+
+Purpose:
+  Root spec that owns the whole billing directory by glob.
+
+Owns:
+  src/billing/*

@@ -50,12 +50,14 @@ claude
 In the session, run `/mcp`. Expected:
 
 - [ ] `specdd` appears in the connected-servers list
-- [ ] Five tools listed:
+- [ ] Seven tools listed:
   - [ ] `parse_spec`
   - [ ] `resolve_spec_chain`
   - [ ] `list_tasks`
   - [ ] `get_effective_constraints`
   - [ ] `update_task_status`
+  - [ ] `check_modification_scope`
+  - [ ] `validate_spec`
 - [ ] Each read-tool description begins with "Prefer this over..." and
       `update_task_status` advertises itself as "the **only** write tool"
 
@@ -291,7 +293,78 @@ rm -rf /tmp/specdd-e2e
 - [ ] Canonical fixture under `tests/fixtures/chains/simple_3_level/` is
       byte-identical to the committed version (`git status` is clean)
 
-## 10. Cleanup
+## 10. Smoke test: check_modification_scope (PR 5) — the pre-edit gate
+
+Ask Claude:
+
+> Use `mcp__specdd__check_modification_scope` with
+> `target=tests/fixtures/chains/simple_3_level/src/billing/services/invoice.ts`
+> and `proposed_files` set to `["src/billing/services/invoice.ts",
+> "src/billing/services/invoice.test.ts", "src/billing/services/secrets.py"]`.
+
+Expected:
+
+- [ ] `ok: true`
+- [ ] `authority_source == "src/billing/services/invoice.sdd"`
+- [ ] `allowed` contains both `invoice.ts` (exists) and `invoice.test.ts`
+      (a **new** file, allowed by the literal pattern even though it isn't
+      on disk)
+- [ ] `out_of_scope == ["src/billing/services/secrets.py"]`
+- [ ] `multiple_authorities` is `null` (this chain has a single authority)
+
+## 11. Smoke test: validate_spec (PR 5) — the health check
+
+Ask Claude:
+
+> Use `mcp__specdd__validate_spec` with
+> `path=tests/fixtures/chains/simple_3_level/src/billing/services/invoice.sdd`
+> and `check_inheritance=true`.
+
+Expected:
+
+- [ ] `ok: true`
+- [ ] `summary.errors == 0` (the canonical fixture is clean)
+- [ ] `check_inheritance=true` is accepted and adds no cross-spec issues
+      (deferred to PR 7) — no error, no extra findings
+
+Then exercise an error rule:
+
+> Call `mcp__specdd__validate_spec` with `content` set to
+> `Tasks:\n  [y] #1 bad state\n  [ ] #1 dupe id\n`.
+
+- [ ] `summary.errors >= 2`
+- [ ] `issues` includes `MISSING_SPEC_HEADER`, `INVALID_TASK_STATE`,
+      and `DUPLICATE_TASK_ID`, each with a `line`
+
+## 12. Full `/specc` flow (PR 5) — **the whole workflow, end to end**
+
+This is the first time every tool composes in one real session. With
+`/specc` installed (PR 6) you invoke it directly; until then, drive the
+sequence by hand.
+
+> In `tests/fixtures/chains/simple_3_level/`, implement task `#1` in the
+> invoice service.
+
+Verify Claude calls, **in order**:
+
+- [ ] `get_effective_constraints` — first non-clarifying action; returns
+      `conflicts: []` and `write_authority_source: src/billing/services/invoice.sdd`
+- [ ] (confirms the task with you before editing)
+- [ ] `check_modification_scope` — the planned file comes back `allowed`
+- [ ] `Edit` / `Write` — only on files in the `allowed` list
+- [ ] `update_task_status` — flips `[ ] #1` to `[x] #1` (NOT a raw `Edit`)
+- [ ] `validate_spec` — `ok: true`, no new errors
+
+Then confirm the file landed correctly:
+
+- [ ] The spec shows `[x]` on task `#1` and `[ ]` still on `#2`
+- [ ] No unrelated lines changed (`git diff` is limited to the one task line
+      plus whatever code the implementation legitimately added)
+
+> Restore the fixture afterward: `git checkout
+> tests/fixtures/chains/simple_3_level/`
+
+## 13. Cleanup
 
 ```bash
 claude mcp remove specdd

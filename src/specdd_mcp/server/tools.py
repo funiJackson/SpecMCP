@@ -28,7 +28,11 @@ from specdd_mcp.operations.merge import (
 from specdd_mcp.operations.mutate_tasks import (
     update_task_status as _update_task_status,
 )
+from specdd_mcp.operations.scope import (
+    check_modification_scope as _check_modification_scope,
+)
 from specdd_mcp.operations.tasks import list_tasks as _list_tasks
+from specdd_mcp.operations.validation import run_validation as _run_validation
 from specdd_mcp.parser import parse_spec as _parse_spec
 from specdd_mcp.parser import resolve_spec_chain as _resolve_spec_chain
 from specdd_mcp.server.app import mcp
@@ -376,4 +380,175 @@ def update_task_status(
         ).model_dump()
     error_code = result.error if isinstance(result, Err) else None
     log_tool_result("update_task_status", ok=result.ok, error_code=error_code)
+    return result.model_dump()
+
+
+@mcp.tool()
+def validate_spec(
+    path: str | None = None,
+    content: str | None = None,
+    virtual_path: str | None = None,
+    check_inheritance: bool = False,
+    max_lines: int = 80,
+    repo_root: str | None = None,
+) -> dict[str, Any]:
+    """Validate one `.sdd` spec against the SpecDD rule set (DESIGN §5.7).
+
+    This is `/specc` step 8 — the post-implementation health check. Prefer it
+    over hand-rolled `Read`+grep linting whenever you need structured findings
+    with `path:line` provenance.
+
+    Provide exactly one of `path` or `content` (same contract as `parse_spec`).
+    A parse-level failure (missing file, bad encoding, binary) is returned as
+    the parser's own `Err` — the rule set only runs on a spec that parsed.
+
+    Single-file rules (run always):
+      Errors:
+        MISSING_SPEC_HEADER  — no `Spec:` line.
+        INVALID_TASK_STATE   — a `Tasks:` line uses a non-canonical state symbol.
+        DUPLICATE_TASK_ID     — two tasks share the same `#N`.
+        MALFORMED_SECTION     — a section has body content the parser couldn't
+                                interpret (e.g. `Structure:` with no `path: desc`).
+      Warnings:
+        MISSING_PURPOSE             — no `Purpose:` section (recommended, not required).
+        UNKNOWN_SECTION             — a section name outside the canonical list
+                                      (SpecDD is extensible — kept verbatim).
+        EMPTY_SECTION               — a known section header with no content.
+        LONG_SPEC                   — file exceeds `max_lines` (default 80).
+        OWNERSHIP_OUTSIDE_DIRECTORY — an `Owns:`/`Can modify:` pattern escapes
+                                      the spec's own subtree (`..` or absolute).
+
+    Inputs:
+      path / content: exactly one. `virtual_path` aids level inference and
+                      error messages when using `content`.
+      check_inheritance: accepted now for forward-compat; the cross-spec rules
+                      (DUPLICATE_PARENT_RULE, CONFLICTING_INHERITANCE,
+                      TASK_VIOLATES_MUSTNOT) light up in a later PR. Passing
+                      `true` today adds zero issues — no breaking signature
+                      change when they arrive.
+      max_lines:      LONG_SPEC threshold. Default 80.
+      repo_root:      reserved for the cross-spec rules; ignored today.
+
+    Returns Result envelope:
+      Success: {"ok": true, "data": {"issues": [...], "summary": {"errors", "warnings"}}}
+      Failure: parser `Err` (INVALID_INPUT / NOT_FOUND / IO_ERROR /
+               ENCODING_ERROR / PARSE_ERROR).
+
+    Each issue: {"severity", "code", "message", "line"?}. An empty `issues`
+    list with zero counts means the spec is clean.
+    """
+    log_tool_invocation(
+        "validate_spec",
+        {
+            "path": path,
+            "content": content,
+            "virtual_path": virtual_path,
+            "check_inheritance": check_inheritance,
+            "max_lines": max_lines,
+            "repo_root": repo_root,
+        },
+    )
+    try:
+        parse_result = _parse_spec(
+            path=path, content=content, virtual_path=virtual_path
+        )
+        if isinstance(parse_result, Err):
+            log_tool_result(
+                "validate_spec", ok=False, error_code=parse_result.error
+            )
+            return parse_result.model_dump()
+        data = _run_validation(
+            parse_result.data,
+            check_inheritance=check_inheritance,
+            repo_root=Path(repo_root) if repo_root is not None else None,
+            max_lines=max_lines,
+        )
+    except Exception as exc:
+        log_tool_result("validate_spec", ok=False, error_code="INVALID_INPUT")
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in validate_spec: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    log_tool_result("validate_spec", ok=True)
+    return Ok(data=data, warnings=parse_result.warnings).model_dump()
+
+
+@mcp.tool()
+def check_modification_scope(
+    target: str,
+    proposed_files: list[str],
+    repo_root: str | None = None,
+) -> dict[str, Any]:
+    """Check whether proposed file edits are inside the spec chain's write scope.
+
+    This is `/specc` step 4 — the pre-edit gate. Call it before `Edit`/`Write`
+    to confirm the files you're about to touch are governed by the nearest
+    spec's `Owns:` / `Can modify:`, and to surface when more than one spec
+    claims the same file.
+
+    Two-tier matching per proposed file:
+      - existing file → matched against the live-filesystem glob expansion.
+      - new file (not yet on disk) → matched against the `Owns:`/`Can modify:`
+        pattern itself. "Allowed" then means "you may create this here," not
+        "this file exists." This is how a brand-new module file inside an
+        owned directory comes back allowed.
+
+    Inputs:
+      target:         repo-relative (with `repo_root`) or absolute path to the
+                      file/dir the work concerns. Resolved through the same
+                      chain walk as `resolve_spec_chain`.
+      proposed_files: paths you intend to create or modify. Repo-relative or
+                      absolute; normalized to POSIX repo-relative for matching.
+      repo_root:      absolute path. If omitted, auto-detected (`.specdd/` or
+                      `.git/`).
+
+    Returns Result envelope. On success `data` is a ScopeReport:
+      {
+        "authority_source":     "<nearest spec granting write authority>" | null,
+        "effective_scope":      [WriteScopeEntry, ...],   # the authority's surface
+        "allowed":              ["<repo-relative path>", ...],
+        "out_of_scope":         ["<path>", ...],
+        "multiple_authorities": [{"spec", "line", "file"}, ...] | null,
+        "reason":               "<why nothing has authority>" | null
+      }
+
+    `authority_source: null` (with a `reason`) means either no SpecDD coverage
+    for the target, or coverage that declares no write authority — every
+    proposed file lands in `out_of_scope`. A populated `multiple_authorities`
+    is the "two specs both Own the same thing" hazard the README warns about:
+    surfaced, not blocked.
+
+    Error codes (propagated from `resolve_spec_chain`):
+      INVALID_INPUT — relative `target` without `repo_root`
+      NOT_FOUND     — target missing, or no repo root detectable
+      OUT_OF_SCOPE  — target resolves outside `repo_root`
+    """
+    log_tool_invocation(
+        "check_modification_scope",
+        {
+            "target": target,
+            "proposed_files": proposed_files,
+            "repo_root": repo_root,
+        },
+    )
+    try:
+        result = _check_modification_scope(
+            target=target,
+            proposed_files=proposed_files,
+            repo_root=repo_root,
+        )
+    except Exception as exc:
+        log_tool_result(
+            "check_modification_scope", ok=False, error_code="INVALID_INPUT"
+        )
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in check_modification_scope: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    error_code = result.error if isinstance(result, Err) else None
+    log_tool_result(
+        "check_modification_scope", ok=result.ok, error_code=error_code
+    )
     return result.model_dump()

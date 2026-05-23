@@ -477,6 +477,8 @@ Result<{
 
 ### 5.6 `check_modification_scope`
 
+**Status: implemented (PR 5).**
+
 **Purpose.** Given a target file and a proposed list of files to modify, check which are inside the nearest spec's `Can modify:` / `Owns:` and which would overstep.
 
 **Why MCP.** Pre-edit gate, called by `/specc` step 4. Cheap to call before any write, prevents whole categories of agent overreach.
@@ -520,6 +522,8 @@ Result<{
 ---
 
 ### 5.7 `validate_spec`
+
+**Status: partially implemented (PR 5) — single-file rules only.** The nine single-file rules below run today. The three cross-spec rules (`DUPLICATE_PARENT_RULE`, `CONFLICTING_INHERITANCE`, `TASK_VIOLATES_MUSTNOT`) are deferred to PR 7; `check_inheritance: true` is accepted now for forward-compatibility but adds zero issues until then.
 
 **Purpose.** Static check of a single spec file or raw content. Surfaces syntax issues, malformed tasks, unknown sections (warnings), and optionally cross-spec inheritance issues.
 

@@ -1,0 +1,7 @@
+Spec: Billing Module
+
+Purpose:
+  Module-level authority over the billing directory's TypeScript.
+
+Owns:
+  *.ts

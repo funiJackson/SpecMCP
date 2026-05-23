@@ -60,7 +60,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 
 ### What ships today
 
-`specdd-mcp` currently exposes **5 of the 9 planned v1 tools**:
+`specdd-mcp` currently exposes **7 of the 9 planned v1 tools**:
 
 | Tool | Status | What it does |
 |---|---|---|
@@ -69,10 +69,14 @@ claude mcp add specdd "$(which specdd-mcp)"
 | `mcp__specdd__list_tasks` | ✅ PR 3 | Cross-spec task discovery with state/text/id filters |
 | `mcp__specdd__get_effective_constraints` | ✅ PR 3 | Merged view of all inherited rules + 4 conflict detectors |
 | `mcp__specdd__update_task_status` | ✅ PR 4 | Atomic byte-faithful batch task-state writes |
-| `mcp__specdd__check_modification_scope` | ⏳ PR 5 | Pre-edit gate for write authority |
-| `mcp__specdd__validate_spec` | ⏳ PR 5 | Spec health check |
+| `mcp__specdd__check_modification_scope` | ✅ PR 5 | Pre-edit gate for write authority |
+| `mcp__specdd__validate_spec` | ✅ PR 5 | Spec health check (single-file rules; cross-spec deferred to PR 7) |
 | `mcp__specdd__list_specs` | ⏳ PR 7 | Repo-wide spec index |
 | `mcp__specdd__find_ownership_conflicts` | ⏳ PR 7 | Multi-owner overlap detection |
+
+With these two, the full `/specc` workflow runs end-to-end — see
+[Validating specs](#validating-specs) and
+[Checking write scope before editing](#checking-write-scope-before-editing).
 
 See [`DESIGN.md`](./DESIGN.md) §5 for the full tool contracts and
 [`plans/`](./plans/) for the PR-by-PR implementation schedule.
@@ -231,6 +235,73 @@ if isinstance(result, Ok):
   source order with `{line, id, text, current_state}`. Retry with
   `task_line` (the safest identifier) using the candidate the user
   meant.
+
+## Checking write scope before editing
+
+`check_modification_scope` is the pre-edit gate (`/specc` step 4): before
+touching code, confirm the files you're about to write are governed by the
+nearest spec's `Owns:` / `Can modify:`.
+
+```python
+from specdd_mcp.operations.scope import check_modification_scope
+
+report = check_modification_scope(
+    target="src/billing/services/invoice.ts",
+    proposed_files=[
+        "src/billing/services/invoice.ts",       # exists, owned   → allowed
+        "src/billing/services/invoice.test.ts",  # new file, owned → allowed
+        "src/billing/services/secrets.py",       # not owned       → out_of_scope
+    ],
+).data
+
+report.authority_source   # "src/billing/services/invoice.sdd"
+report.allowed            # ["src/billing/services/invoice.ts", ".../invoice.test.ts"]
+report.out_of_scope       # ["src/billing/services/secrets.py"]
+```
+
+Two-tier matching: an **existing** file is matched against the live glob
+expansion; a **new** file (not yet on disk) is matched against the pattern
+itself — so `allowed` means *"you may create this here,"* not *"this exists."*
+
+When more than one spec in the chain claims the same file, `multiple_authorities`
+is populated (the "two specs both Own the same thing" hazard the SpecDD README
+warns against). The tool surfaces it rather than refusing to operate — the
+caller decides. A `null` `authority_source` with a `reason` means the target
+has no SpecDD coverage, or no spec in its chain declares write authority.
+
+## Validating specs
+
+`validate_spec` is the post-implementation health check (`/specc` step 8). It
+runs nine single-file rules and returns structured issues with `path:line`
+provenance.
+
+```python
+from specdd_mcp.operations.validation import run_validation
+from specdd_mcp.parser.parse_spec import parse_spec
+
+spec = parse_spec(path="src/billing/services/invoice.sdd").data
+result = run_validation(spec, check_inheritance=True)
+
+result.summary   # {"errors": 0, "warnings": 0}  → clean
+result.issues    # [ValidationIssue(severity, code, message, line?), ...]
+```
+
+| Code | Severity | Triggers when |
+|---|---|---|
+| `MISSING_SPEC_HEADER` | error | No `Spec:` line. |
+| `INVALID_TASK_STATE` | error | A `Tasks:` line uses a non-canonical state symbol. |
+| `DUPLICATE_TASK_ID` | error | Two tasks share the same `#N`. |
+| `MALFORMED_SECTION` | error | A section has body content the parser couldn't interpret. |
+| `MISSING_PURPOSE` | warning | No `Purpose:` section. |
+| `UNKNOWN_SECTION` | warning | A section name outside the canonical list (kept verbatim). |
+| `EMPTY_SECTION` | warning | A known section header with no content. |
+| `LONG_SPEC` | warning | File exceeds `max_lines` (default 80). |
+| `OWNERSHIP_OUTSIDE_DIRECTORY` | warning | An `Owns:`/`Can modify:` pattern escapes the spec's subtree. |
+
+`check_inheritance=true` is accepted today but adds zero issues — the cross-spec
+rules (`DUPLICATE_PARENT_RULE`, `CONFLICTING_INHERITANCE`,
+`TASK_VIOLATES_MUSTNOT`) land in PR 7. Passing it now keeps `/specc` callers
+forward-compatible with no signature change later.
 
 ## License
 

@@ -426,3 +426,115 @@ class UpdateResult(BaseModel):
 
 
 UpdateTaskStatusResult: TypeAlias = "Ok[UpdateResult] | Err"
+
+
+# ---------------------------------------------------------------------------
+# validate_spec — single-file + (PR 7) cross-spec validation (DESIGN §5.7)
+# ---------------------------------------------------------------------------
+
+
+ValidationCode: TypeAlias = Literal[
+    # Errors
+    "MISSING_SPEC_HEADER",
+    "INVALID_TASK_STATE",
+    "DUPLICATE_TASK_ID",
+    "MALFORMED_SECTION",
+    # Warnings (single-file)
+    "MISSING_PURPOSE",
+    "UNKNOWN_SECTION",
+    "EMPTY_SECTION",
+    "LONG_SPEC",
+    "OWNERSHIP_OUTSIDE_DIRECTORY",
+    # Warnings (cross-spec — populated in PR 7)
+    "DUPLICATE_PARENT_RULE",
+    "CONFLICTING_INHERITANCE",
+    "TASK_VIOLATES_MUSTNOT",
+]
+
+
+ValidationSeverity: TypeAlias = Literal["error", "warning"]
+
+
+class ValidationIssue(BaseModel):
+    """One finding from ``validate_spec`` (DESIGN §5.7).
+
+    Single-file rules populate ``severity`` / ``code`` / ``message`` / ``line``.
+    Cross-spec rules (PR 7) additionally populate ``related_spec`` (the
+    ancestor spec the finding ties to, in ``path:line`` form) and
+    ``related_line`` so the slash command can quote both sides.
+    """
+
+    severity: ValidationSeverity
+    code: ValidationCode
+    message: str
+    line: int | None = None
+    related_spec: str | None = None
+    related_line: int | None = None
+
+
+class ValidationSummary(BaseModel):
+    """Aggregate counts for quick UI display — pre-computed so a caller
+    doesn't have to count ``severity == "error"`` themselves."""
+
+    errors: int
+    warnings: int
+
+
+class ValidateSpecData(BaseModel):
+    """Success payload for ``validate_spec``."""
+
+    issues: list[ValidationIssue] = Field(default_factory=list)
+    summary: ValidationSummary
+
+
+ValidateSpecResult: TypeAlias = "Ok[ValidateSpecData] | Err"
+
+
+# ---------------------------------------------------------------------------
+# check_modification_scope (DESIGN §5.6)
+# ---------------------------------------------------------------------------
+
+
+class MultipleAuthority(BaseModel):
+    """One claim on a proposed file from a spec other than the nearest one.
+
+    Multiple-authority entries are emitted in *spec-chain order* — root
+    first — so a UI can render the inheritance ladder top-down.
+    """
+
+    spec: str
+    line: int
+    file: str
+
+
+class ScopeReport(BaseModel):
+    """Success payload for ``check_modification_scope`` (DESIGN §5.6).
+
+    Attributes:
+        authority_source: Repo-relative path of the **nearest** spec
+            that grants write authority — ``None`` when the target has
+            no SpecDD coverage.
+        effective_scope: The nearest spec's ``Owns:`` / ``Can modify:``
+            patterns with their snapshot expansions (same shape as
+            :class:`WriteScopeEntry`).
+        allowed: Proposed files that are inside the effective scope —
+            either because the file already exists and matched a glob,
+            or because the file's *intended* path matches a literal /
+            glob pattern (new-file allowance).
+        out_of_scope: Proposed files that do **not** match any pattern.
+        multiple_authorities: Populated when more than one spec in the
+            chain claims a proposed file (the SpecDD README warns
+            against this; we surface it rather than refusing to operate).
+            ``None`` when no overlap exists.
+        reason: Human-facing summary when no authority is found at all.
+    """
+
+    authority_source: str | None
+    effective_scope: list[WriteScopeEntry] = Field(default_factory=list)
+    allowed: list[str] = Field(default_factory=list)
+    out_of_scope: list[str] = Field(default_factory=list)
+    multiple_authorities: list[MultipleAuthority] | None = None
+    reason: str | None = None
+
+
+CheckModificationScopeResult: TypeAlias = "Ok[ScopeReport] | Err"

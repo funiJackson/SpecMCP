@@ -31,7 +31,10 @@ from specdd_mcp.operations.conflicts import (
     detect_must_vs_must_not,
     detect_task_violates_must_not,
 )
-from specdd_mcp.operations.globs import expand_pattern
+from specdd_mcp.operations.write_scope import (
+    compute_write_scope,
+    spec_grants_write_authority,
+)
 from specdd_mcp.types import (
     ChainSummaryEntry,
     Conflict,
@@ -57,11 +60,6 @@ _ConstraintSection = Literal[
     "done_when",
     "can_read",
 ]
-
-# Sections that grant write authority. The nearest spec (last in the chain)
-# carrying any of these is the ``write_authority_source``.
-_SCOPE_SECTIONS: tuple[Literal["owns", "can_modify"], ...] = ("owns", "can_modify")
-
 
 def build_effective_constraints(
     chain: SpecChain,
@@ -133,33 +131,11 @@ def build_effective_constraints(
             )
 
         # Write scope from Owns: + Can modify:, with glob expansion against
-        # the live filesystem. Spec's own directory is the base for relative
-        # patterns. The nearest spec carrying either section wins
-        # write_authority_source.
-        spec_dir = (repo_root / spec.path).parent
-        spec_has_scope_section = False
-        for scope_section in _SCOPE_SECTIONS:
-            patterns: list[str] = getattr(spec, scope_section) or []
-            if patterns:
-                spec_has_scope_section = True
-            line_numbers = spec.bullet_lines.get(
-                cast(KnownSection, scope_section), []
-            )
-            for index, pattern in enumerate(patterns):
-                expansion = expand_pattern(pattern, spec_dir, repo_root)
-                write_scope.append(
-                    WriteScopeEntry(
-                        pattern=expansion.pattern,
-                        matches=expansion.matches,
-                        source=spec.path,
-                        source_line=(
-                            line_numbers[index]
-                            if index < len(line_numbers)
-                            else 0
-                        ),
-                    )
-                )
-        if spec_has_scope_section:
+        # the live filesystem (shared with check_modification_scope via
+        # operations/write_scope.py). The nearest spec carrying either
+        # section wins write_authority_source.
+        write_scope.extend(compute_write_scope(spec, repo_root))
+        if spec_grants_write_authority(spec):
             write_authority_source = spec.path
 
     result = EffectiveConstraints(

@@ -1,0 +1,7 @@
+Spec: Billing Module
+
+Purpose:
+  Module spec that claims the invoice file by literal name.
+
+Owns:
+  invoice.ts

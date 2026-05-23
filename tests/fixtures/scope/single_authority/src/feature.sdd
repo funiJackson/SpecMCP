@@ -1,0 +1,7 @@
+Spec: TypeScript Feature
+
+Purpose:
+  Own every TypeScript file in this directory.
+
+Owns:
+  *.ts

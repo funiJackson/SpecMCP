@@ -33,6 +33,11 @@ CONFLICT_FIXTURES_DIR: Path = (
 exactly that kind. Used by ``test_conflict_fixtures.py`` to lock in detector
 behavior against real files (not just inline strings)."""
 
+SCOPE_FIXTURES_DIR: Path = Path(__file__).parent / "fixtures" / "scope"
+"""One subdirectory per ``check_modification_scope`` scenario (single vs.
+multiple authority, glob vs. literal, new-file-in-glob, no coverage). Each is
+a minimal SpecDD tree with a ``.specdd/`` marker. Used by ``test_scope.py``."""
+
 # ---------------------------------------------------------------------------
 # Benchmark corpus (live clone with vendored snapshot fallback)
 # ---------------------------------------------------------------------------

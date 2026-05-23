@@ -1,0 +1,7 @@
+Spec: Invoice Feature
+
+Purpose:
+  Feature-level authority that also claims the invoice file directly.
+
+Owns:
+  invoice.ts
