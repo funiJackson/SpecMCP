@@ -75,6 +75,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 | `mcp__specdd__find_ownership_conflicts` | ✅ PR 8 | Multi-owner overlap detection across `Owns:` claims |
 | `mcp__specdd__add_task` | ✅ PR 9 | Byte-faithful insertion of a new `open` task (v2) |
 | `mcp__specdd__check_dependencies` | ✅ PR 10 | Vet proposed deps against inherited `Forbids:` / `Must not:` (v2) |
+| `mcp__specdd__create_spec` | ✅ PR 11 | Scaffold a new `.sdd` file with canonical formatting; validates, refuses overwrite (v2) |
 
 The full `/specc` workflow runs end-to-end — see
 [Validating specs](#validating-specs) and

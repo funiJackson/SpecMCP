@@ -24,6 +24,7 @@ from specdd_mcp.server.tools import (
     add_task,
     check_dependencies,
     check_modification_scope,
+    create_spec,
     find_ownership_conflicts,
     get_effective_constraints,
     list_specs,
@@ -1173,3 +1174,76 @@ def test_check_dependencies_unexpected_exception_becomes_err(
 async def test_check_dependencies_registered_with_mcp_singleton() -> None:
     tools = await mcp.list_tools()
     assert "check_dependencies" in [t.name for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# create_spec wrapper
+# ---------------------------------------------------------------------------
+
+
+def test_create_spec_returns_ok(tmp_path: Path) -> None:
+    spec = tmp_path / "svc.sdd"
+    result = create_spec(
+        path=str(spec),
+        name="Svc",
+        purpose="Do the thing.",
+        owns=["a.ts"],
+        tasks=["wire it up"],
+    )
+    assert result["ok"] is True
+    assert result["data"]["path"] == str(spec)
+    assert result["data"]["content"].startswith("Spec: Svc\n")
+    assert result["data"]["content_hash"]
+    assert spec.read_text() == result["data"]["content"]
+
+
+def test_create_spec_refuses_overwrite(tmp_path: Path) -> None:
+    spec = tmp_path / "a.sdd"
+    spec.write_text("Spec: Existing\n")
+    result = create_spec(path=str(spec), name="New")
+    assert result["ok"] is False
+    assert result["error"] == "ALREADY_EXISTS"
+
+
+def test_create_spec_empty_name_returns_err(tmp_path: Path) -> None:
+    result = create_spec(path=str(tmp_path / "a.sdd"), name="  ")
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+
+
+def test_create_spec_level_mismatch_warns(tmp_path: Path) -> None:
+    result = create_spec(
+        path=str(tmp_path / "plain.sdd"), name="Plain", level="service"
+    )
+    assert result["ok"] is True
+    assert any("level" in w for w in result["warnings"])
+
+
+def test_create_spec_logs_invocation_and_result(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger=TOOL_LOGGER):
+        create_spec(path=str(tmp_path / "a.sdd"), name="A")
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("create_spec called with" in m for m in messages)
+    assert any("create_spec → ok" in m for m in messages)
+
+
+def test_create_spec_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(*_a: object, **_k: object) -> None:
+        raise RuntimeError("simulated create bug")
+
+    monkeypatch.setattr("specdd_mcp.server.tools._create_spec", _raise)
+    result = create_spec(path="/x.sdd", name="A")
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated create bug" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_spec_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "create_spec" in [t.name for t in tools]

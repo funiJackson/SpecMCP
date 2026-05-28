@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from specdd_mcp.operations.add_task import add_task as _add_task
+from specdd_mcp.operations.create_spec import create_spec as _create_spec
 from specdd_mcp.operations.dependencies import (
     check_dependencies as _check_dependencies,
 )
@@ -880,4 +881,107 @@ def check_dependencies(
         ).model_dump()
     error_code = result.error if isinstance(result, Err) else None
     log_tool_result("check_dependencies", ok=result.ok, error_code=error_code)
+    return result.model_dump()
+
+
+@mcp.tool()
+def create_spec(
+    path: str,
+    name: str,
+    level: SpecLevel | None = None,
+    platform: str | None = None,
+    purpose: str | None = None,
+    owns: list[str] | None = None,
+    can_modify: list[str] | None = None,
+    can_read: list[str] | None = None,
+    references: list[str] | None = None,
+    must: list[str] | None = None,
+    must_not: list[str] | None = None,
+    depends_on: list[str] | None = None,
+    forbids: list[str] | None = None,
+    tasks: list[str] | None = None,
+) -> dict[str, Any]:
+    """Scaffold a new `.sdd` spec file with canonical formatting.
+
+    Use this instead of hand-writing a `.sdd` with `Write` — it lays sections
+    out in the SpecDD reference order, indents bullets consistently, validates
+    the result before writing, and refuses to clobber an existing file.
+
+    Sections are emitted in order and only when non-empty:
+      `Spec:` → `Platform:` → `Purpose:` → `Owns:` → `Can modify:` →
+      `Can read:` → `References:` → `Must:` → `Must not:` → `Depends on:` →
+      `Forbids:` → `Tasks:`. Each `tasks` entry becomes an `open` (`[ ]`) task.
+
+    Missing parent directories are created. The assembled spec is parsed and
+    run through the single-file validation rules; any **error** aborts the
+    write (warnings are returned in `warnings` but don't block).
+
+    Inputs:
+      path:     destination for the new file (refuses to overwrite).
+      name:     the `Spec:` header (required, non-empty).
+      level:    optional declared SpecLevel — advisory only; level is derived
+                from the path, so a mismatch yields a warning, not an error.
+      platform: optional `Platform:` value (inline).
+      purpose:  optional `Purpose:` text (may be multi-line).
+      owns / can_modify / can_read / references / must / must_not /
+      depends_on / forbids: optional list sections (blank entries dropped).
+      tasks:    optional task texts, each created `open`.
+
+    Returns Result envelope. On success `data` is:
+      {
+        "path":         "<path written>",
+        "content":      "<full file text>",
+        "content_hash": "<SHA-256 of bytes written>"   # chain into add_task
+      }
+
+    Error codes:
+      INVALID_INPUT  — empty `name`, or the assembled spec failed validation
+                       (details.issues lists the errors)
+      ALREADY_EXISTS — `path` already exists
+    """
+    log_tool_invocation(
+        "create_spec",
+        {
+            "path": path,
+            "name": name,
+            "level": level,
+            "platform": platform,
+            "purpose": purpose,
+            "owns": owns,
+            "can_modify": can_modify,
+            "can_read": can_read,
+            "references": references,
+            "must": must,
+            "must_not": must_not,
+            "depends_on": depends_on,
+            "forbids": forbids,
+            "tasks": tasks,
+        },
+    )
+    try:
+        result = _create_spec(
+            Path(path),
+            name=name,
+            level=level,
+            platform=platform,
+            purpose=purpose,
+            owns=owns,
+            can_modify=can_modify,
+            can_read=can_read,
+            references=references,
+            must=must,
+            must_not=must_not,
+            depends_on=depends_on,
+            forbids=forbids,
+            tasks=tasks,
+        )
+    except Exception as exc:
+        log_tool_result("create_spec", ok=False, error_code="INVALID_INPUT")
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in create_spec: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    error_code = result.error if isinstance(result, Err) else None
+    log_tool_result("create_spec", ok=result.ok, error_code=error_code)
     return result.model_dump()

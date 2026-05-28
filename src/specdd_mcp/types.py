@@ -477,6 +477,28 @@ CheckDependenciesResult: TypeAlias = "Ok[list[DependencyViolation]] | Err"
 
 
 # ---------------------------------------------------------------------------
+# create_spec — scaffold a new .sdd file (DESIGN §6.2)
+# ---------------------------------------------------------------------------
+
+
+class CreateSpecData(BaseModel):
+    """Success payload for ``create_spec``.
+
+    ``content`` is the exact text written (so the caller can see the scaffold
+    without a re-read) and ``content_hash`` is the SHA-256 of the written
+    bytes — feed it straight into ``add_task`` / ``update_task_status`` as
+    ``expected_content_hash`` to keep editing without re-parsing.
+    """
+
+    path: str
+    content: str
+    content_hash: str
+
+
+CreateSpecResult: TypeAlias = "Ok[CreateSpecData] | Err"
+
+
+# ---------------------------------------------------------------------------
 # validate_spec — single-file + (PR 7) cross-spec validation (DESIGN §5.7)
 # ---------------------------------------------------------------------------
 

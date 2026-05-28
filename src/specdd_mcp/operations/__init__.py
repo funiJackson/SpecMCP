@@ -14,6 +14,7 @@ Modules:
 - :mod:`ownership` — ``find_ownership_conflicts`` multi-owner detection (§5.9).
 - :mod:`add_task` — ``add_task`` byte-faithful task insertion (DESIGN §6.3).
 - :mod:`dependencies` — ``check_dependencies`` deps vs Forbids/Must not (§6.1).
+- :mod:`create_spec` — ``create_spec`` new-file scaffolding (DESIGN §6.2).
 
 Layering rule (enforced by convention, not tooling): operations import from
 ``parser`` and ``paths``, never the other way round. Anything that needs to
