@@ -538,3 +538,81 @@ class ScopeReport(BaseModel):
 
 
 CheckModificationScopeResult: TypeAlias = "Ok[ScopeReport] | Err"
+
+
+# ---------------------------------------------------------------------------
+# list_specs — repo-wide spec index (DESIGN §5.8)
+# ---------------------------------------------------------------------------
+
+
+class TaskSummary(BaseModel):
+    """Per-state task counts for one spec in a :class:`SpecIndexEntry`.
+
+    One field per :data:`TaskState`. A spec with no ``Tasks:`` section
+    summarizes to all zeros rather than ``None`` so callers can sum across
+    the index without null-checking.
+    """
+
+    open: int = 0
+    done: int = 0
+    skipped: int = 0
+    blocked: int = 0
+    needs_decision: int = 0
+
+
+class SpecIndexEntry(BaseModel):
+    """One row in the ``list_specs`` index (DESIGN §5.8).
+
+    ``task_summary`` is present only when the caller asked for it
+    (``include_task_summary=True``); otherwise it is ``None``.
+    """
+
+    path: str
+    name: str
+    level: SpecLevel
+    line_count: int
+    task_summary: TaskSummary | None = None
+
+
+ListSpecsResult: TypeAlias = "Ok[list[SpecIndexEntry]] | Err"
+
+
+# ---------------------------------------------------------------------------
+# find_ownership_conflicts — multi-owner overlap detection (DESIGN §5.9)
+# ---------------------------------------------------------------------------
+
+
+OwnershipConflictKind: TypeAlias = Literal[
+    "literal",
+    "glob_overlap",
+    "glob_vs_literal",
+]
+
+
+class OwnershipOwner(BaseModel):
+    """One spec's claim on a contested item via ``Owns:``.
+
+    ``pattern`` is the literal ``Owns:`` line as written; ``line`` is where
+    that line sits in ``spec`` so callers can quote ``path:line`` provenance.
+    """
+
+    spec: str
+    line: int
+    pattern: str
+
+
+class OwnershipConflict(BaseModel):
+    """An item that more than one spec claims via ``Owns:`` (DESIGN §5.9).
+
+    ``item`` is the resolved repo-relative path the owners collide on.
+    ``kind`` records how the collision arises: two literals, two overlapping
+    globs, or a glob that subsumes a literal. ``owners`` lists every claiming
+    spec, ordered by ``(spec, line)``.
+    """
+
+    item: str
+    kind: OwnershipConflictKind
+    owners: list[OwnershipOwner] = Field(default_factory=list)
+
+
+FindOwnershipConflictsResult: TypeAlias = "Ok[list[OwnershipConflict]] | Err"

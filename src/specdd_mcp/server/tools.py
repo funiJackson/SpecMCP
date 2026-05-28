@@ -28,16 +28,20 @@ from specdd_mcp.operations.merge import (
 from specdd_mcp.operations.mutate_tasks import (
     update_task_status as _update_task_status,
 )
+from specdd_mcp.operations.ownership import (
+    find_ownership_conflicts as _find_ownership_conflicts,
+)
 from specdd_mcp.operations.scope import (
     check_modification_scope as _check_modification_scope,
 )
+from specdd_mcp.operations.specs import list_specs as _list_specs
 from specdd_mcp.operations.tasks import list_tasks as _list_tasks
 from specdd_mcp.operations.validation import run_validation as _run_validation
 from specdd_mcp.parser import parse_spec as _parse_spec
 from specdd_mcp.parser import resolve_spec_chain as _resolve_spec_chain
 from specdd_mcp.server.app import mcp
 from specdd_mcp.server.logging import log_tool_invocation, log_tool_result
-from specdd_mcp.types import Err, Ok, TaskState, UpdateRequest
+from specdd_mcp.types import Err, Ok, SpecLevel, TaskState, UpdateRequest
 
 
 @mcp.tool()
@@ -550,5 +554,167 @@ def check_modification_scope(
     error_code = result.error if isinstance(result, Err) else None
     log_tool_result(
         "check_modification_scope", ok=result.ok, error_code=error_code
+    )
+    return result.model_dump()
+
+
+@mcp.tool()
+def list_specs(
+    repo_root: str,
+    scope: str | None = None,
+    levels: list[SpecLevel] | None = None,
+    include_task_summary: bool = True,
+    max_specs: int = 1000,
+) -> dict[str, Any]:
+    """Index every `.sdd` file under a repo (or a narrower scope).
+
+    The orientation tool — prefer it over shell `find` + N `parse_spec` calls
+    when you want a dashboard-style overview: which specs exist, their level,
+    size, and how much work each has left. One call returns a sorted,
+    deduplicated index that respects the same parser and monorepo guardrail as
+    every other tool.
+
+    Inputs:
+      repo_root:            Absolute path to the repo root.
+      scope:                Optional path to limit the walk (absolute or
+                            relative to `repo_root`). When pointing at a file,
+                            the file's directory is walked.
+      levels:               Optional level allow-list (e.g. ["service", "api"]).
+                            `null`/omitted returns all; `[]` returns nothing.
+      include_task_summary: When true (default), each entry carries per-state
+                            task counts; when false, `task_summary` is null.
+      max_specs:            Walk-time cap. Default 1000.
+
+    Returns Result envelope. On success `data` is a list of entries sorted by
+    `path` ascending:
+      {
+        "path":        "<repo-relative POSIX path>",
+        "name":        "<from the Spec: header>",
+        "level":       "<SpecLevel>",
+        "line_count":  <int>,
+        "task_summary": {                  # null when include_task_summary=false
+          "open", "done", "skipped", "blocked", "needs_decision"
+        }
+      }
+
+    A spec that fails to parse is skipped and listed in `warnings` (the index
+    keeps moving). An empty repo returns `ok` with `[]`.
+
+    Error codes:
+      NOT_FOUND     — `repo_root` or `scope` does not exist
+      OUT_OF_SCOPE  — `scope` resolves outside `repo_root`
+      TOO_LARGE     — walk would exceed `max_specs` `.sdd` files
+    """
+    log_tool_invocation(
+        "list_specs",
+        {
+            "repo_root": repo_root,
+            "scope": scope,
+            "levels": levels,
+            "include_task_summary": include_task_summary,
+            "max_specs": max_specs,
+        },
+    )
+    try:
+        scope_path = Path(scope) if scope is not None else None
+        result = _list_specs(
+            repo_root=Path(repo_root),
+            scope=scope_path,
+            levels=levels,
+            include_task_summary=include_task_summary,
+            max_specs=max_specs,
+        )
+    except Exception as exc:
+        log_tool_result("list_specs", ok=False, error_code="INVALID_INPUT")
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in list_specs: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    error_code = result.error if isinstance(result, Err) else None
+    log_tool_result("list_specs", ok=result.ok, error_code=error_code)
+    return result.model_dump()
+
+
+@mcp.tool()
+def find_ownership_conflicts(
+    repo_root: str,
+    scope: str | None = None,
+    max_specs: int = 1000,
+) -> dict[str, Any]:
+    """Detect items that more than one spec claims via `Owns:`.
+
+    SpecDD's rule is "only one spec should own a specific item at any given
+    time." This tool mechanically enforces that — prefer it over hand-rolled
+    cross-spec grepping, which can't expand globs or resolve patterns relative
+    to each spec's own directory.
+
+    Only `Owns:` is considered (`Can modify:` grants shared write access by
+    design). Resolution is a live-filesystem snapshot, same as
+    `get_effective_constraints`:
+      - a literal entry resolves to the one path it names (existence not
+        required — an explicit claim stands on its own).
+      - a glob entry resolves to the files it currently matches on disk.
+
+    A path claimed by two or more distinct specs is a conflict. `kind` records
+    how the claims collide:
+      - "literal"          — two specs name the same literal path.
+      - "glob_overlap"     — two globs both match the path.
+      - "glob_vs_literal"  — a glob subsumes another spec's literal.
+
+    Multiple claims from the *same* spec are not a conflict (that's a
+    single-file concern `validate_spec` covers).
+
+    Inputs:
+      repo_root:  Absolute path to the repo root.
+      scope:      Optional path to limit the walk (absolute or relative to
+                  `repo_root`). When pointing at a file, its directory is walked.
+      max_specs:  Walk-time cap. Default 1000.
+
+    Returns Result envelope. On success `data` is a list sorted by `item`:
+      {
+        "item":  "<resolved repo-relative path>",
+        "kind":  "literal" | "glob_overlap" | "glob_vs_literal",
+        "owners": [
+          {"spec": "<repo-relative spec path>", "line": <int>, "pattern": "<Owns: line>"},
+          ...
+        ]            # ordered by (spec, line)
+      }
+
+    No overlaps (or an empty repo) returns `ok` with `[]`. A spec that fails to
+    parse is skipped and listed in `warnings`.
+
+    Error codes:
+      NOT_FOUND     — `repo_root` or `scope` does not exist
+      OUT_OF_SCOPE  — `scope` resolves outside `repo_root`
+      TOO_LARGE     — walk would exceed `max_specs` `.sdd` files
+    """
+    log_tool_invocation(
+        "find_ownership_conflicts",
+        {
+            "repo_root": repo_root,
+            "scope": scope,
+            "max_specs": max_specs,
+        },
+    )
+    try:
+        scope_path = Path(scope) if scope is not None else None
+        result = _find_ownership_conflicts(
+            repo_root=Path(repo_root),
+            scope=scope_path,
+            max_specs=max_specs,
+        )
+    except Exception as exc:
+        log_tool_result(
+            "find_ownership_conflicts", ok=False, error_code="INVALID_INPUT"
+        )
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in find_ownership_conflicts: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    error_code = result.error if isinstance(result, Err) else None
+    log_tool_result(
+        "find_ownership_conflicts", ok=result.ok, error_code=error_code
     )
     return result.model_dump()

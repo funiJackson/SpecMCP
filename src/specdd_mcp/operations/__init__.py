@@ -10,6 +10,8 @@ Modules:
 - :mod:`globs` — pattern expansion for ``Owns:`` / ``Can modify:`` (PR 3 C4).
 - :mod:`merge` — chain → ``EffectiveConstraints`` aggregation (PR 3 C5-C7).
 - :mod:`conflicts` — four conflict detectors (PR 3 C8-C11).
+- :mod:`specs` — ``list_specs`` repo-wide index (DESIGN §5.8).
+- :mod:`ownership` — ``find_ownership_conflicts`` multi-owner detection (§5.9).
 
 Layering rule (enforced by convention, not tooling): operations import from
 ``parser`` and ``paths``, never the other way round. Anything that needs to

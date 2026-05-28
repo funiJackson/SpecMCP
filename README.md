@@ -60,7 +60,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 
 ### What ships today
 
-`specdd-mcp` currently exposes **7 of the 9 planned v1 tools**:
+`specdd-mcp` exposes **all 9 planned v1 tools**:
 
 | Tool | Status | What it does |
 |---|---|---|
@@ -71,10 +71,10 @@ claude mcp add specdd "$(which specdd-mcp)"
 | `mcp__specdd__update_task_status` | ✅ PR 4 | Atomic byte-faithful batch task-state writes |
 | `mcp__specdd__check_modification_scope` | ✅ PR 5 | Pre-edit gate for write authority |
 | `mcp__specdd__validate_spec` | ✅ PR 5 + PR 7 | Spec health check — nine single-file rules plus three cross-spec inheritance rules |
-| `mcp__specdd__list_specs` | ⏳ PR 7 | Repo-wide spec index |
-| `mcp__specdd__find_ownership_conflicts` | ⏳ PR 7 | Multi-owner overlap detection |
+| `mcp__specdd__list_specs` | ✅ PR 8 | Repo-wide spec index with optional per-state task summaries |
+| `mcp__specdd__find_ownership_conflicts` | ✅ PR 8 | Multi-owner overlap detection across `Owns:` claims |
 
-With these two, the full `/specc` workflow runs end-to-end — see
+The full `/specc` workflow runs end-to-end — see
 [Validating specs](#validating-specs) and
 [Checking write scope before editing](#checking-write-scope-before-editing).
 

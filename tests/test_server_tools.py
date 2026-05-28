@@ -21,7 +21,9 @@ from specdd_mcp.server.app import mcp
 from specdd_mcp.server.logging import TOOL_LOGGER
 from specdd_mcp.server.tools import (
     check_modification_scope,
+    find_ownership_conflicts,
     get_effective_constraints,
+    list_specs,
     list_tasks,
     parse_spec,
     resolve_spec_chain,
@@ -855,3 +857,151 @@ def test_check_modification_scope_unexpected_exception_becomes_err(
 async def test_check_modification_scope_registered_with_mcp_singleton() -> None:
     tools = await mcp.list_tools()
     assert "check_modification_scope" in [t.name for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# list_specs wrapper
+# ---------------------------------------------------------------------------
+
+
+def _make_index_repo(tmp_path: Path) -> Path:
+    (tmp_path / ".specdd").mkdir()
+    (tmp_path / "app.sdd").write_text("Spec: App\n\nTasks:\n  [ ] one\n  [x] two\n")
+    (tmp_path / "services").mkdir()
+    (tmp_path / "services" / "billing.sdd").write_text("Spec: Billing\n")
+    return tmp_path
+
+
+def test_list_specs_returns_sorted_index(tmp_path: Path) -> None:
+    repo = _make_index_repo(tmp_path)
+    result = list_specs(repo_root=str(repo))
+    assert result["ok"] is True
+    paths = [e["path"] for e in result["data"]]
+    assert paths == ["app.sdd", "services/billing.sdd"]
+    app = result["data"][0]
+    assert app["name"] == "App"
+    assert app["task_summary"]["open"] == 1
+    assert app["task_summary"]["done"] == 1
+
+
+def test_list_specs_levels_filter(tmp_path: Path) -> None:
+    repo = _make_index_repo(tmp_path)
+    result = list_specs(repo_root=str(repo), levels=["service"])
+    assert result["ok"] is True
+    assert [e["path"] for e in result["data"]] == ["services/billing.sdd"]
+
+
+def test_list_specs_include_task_summary_false(tmp_path: Path) -> None:
+    repo = _make_index_repo(tmp_path)
+    result = list_specs(repo_root=str(repo), include_task_summary=False)
+    assert result["ok"] is True
+    assert result["data"][0]["task_summary"] is None
+
+
+def test_list_specs_missing_repo_returns_not_found(tmp_path: Path) -> None:
+    result = list_specs(repo_root=str(tmp_path / "ghost"))
+    assert result["ok"] is False
+    assert result["error"] == "NOT_FOUND"
+
+
+def test_list_specs_logs_invocation_and_result(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repo = _make_index_repo(tmp_path)
+    with caplog.at_level(logging.INFO, logger=TOOL_LOGGER):
+        list_specs(repo_root=str(repo))
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("list_specs called with" in m for m in messages)
+    assert any("list_specs → ok" in m for m in messages)
+
+
+def test_list_specs_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(**_: object) -> None:
+        raise RuntimeError("simulated specs bug")
+
+    monkeypatch.setattr("specdd_mcp.server.tools._list_specs", _raise)
+    result = list_specs(repo_root="/nonexistent")
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated specs bug" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_list_specs_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "list_specs" in [t.name for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# find_ownership_conflicts wrapper
+# ---------------------------------------------------------------------------
+
+
+def _make_conflict_repo(tmp_path: Path) -> Path:
+    (tmp_path / ".specdd").mkdir()
+    (tmp_path / "a.sdd").write_text("Spec: A\n\nOwns:\n  shared.ts\n")
+    (tmp_path / "b.sdd").write_text("Spec: B\n\nOwns:\n  shared.ts\n")
+    return tmp_path
+
+
+def test_find_ownership_conflicts_returns_conflict(tmp_path: Path) -> None:
+    repo = _make_conflict_repo(tmp_path)
+    result = find_ownership_conflicts(repo_root=str(repo))
+    assert result["ok"] is True
+    assert len(result["data"]) == 1
+    conflict = result["data"][0]
+    assert conflict["item"] == "shared.ts"
+    assert conflict["kind"] == "literal"
+    assert [o["spec"] for o in conflict["owners"]] == ["a.sdd", "b.sdd"]
+
+
+def test_find_ownership_conflicts_empty_when_clean(tmp_path: Path) -> None:
+    (tmp_path / ".specdd").mkdir()
+    (tmp_path / "a.sdd").write_text("Spec: A\n\nOwns:\n  a.ts\n")
+    result = find_ownership_conflicts(repo_root=str(tmp_path))
+    assert result["ok"] is True
+    assert result["data"] == []
+
+
+def test_find_ownership_conflicts_missing_repo_returns_not_found(
+    tmp_path: Path,
+) -> None:
+    result = find_ownership_conflicts(repo_root=str(tmp_path / "ghost"))
+    assert result["ok"] is False
+    assert result["error"] == "NOT_FOUND"
+
+
+def test_find_ownership_conflicts_logs_invocation_and_result(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repo = _make_conflict_repo(tmp_path)
+    with caplog.at_level(logging.INFO, logger=TOOL_LOGGER):
+        find_ownership_conflicts(repo_root=str(repo))
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("find_ownership_conflicts called with" in m for m in messages)
+    assert any("find_ownership_conflicts → ok" in m for m in messages)
+
+
+def test_find_ownership_conflicts_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(**_: object) -> None:
+        raise RuntimeError("simulated ownership bug")
+
+    monkeypatch.setattr(
+        "specdd_mcp.server.tools._find_ownership_conflicts", _raise
+    )
+    result = find_ownership_conflicts(repo_root="/nonexistent")
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated ownership bug" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_find_ownership_conflicts_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "find_ownership_conflicts" in [t.name for t in tools]
