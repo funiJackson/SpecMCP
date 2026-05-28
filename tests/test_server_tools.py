@@ -22,6 +22,7 @@ from specdd_mcp.server.app import mcp
 from specdd_mcp.server.logging import TOOL_LOGGER
 from specdd_mcp.server.tools import (
     add_task,
+    check_dependencies,
     check_modification_scope,
     find_ownership_conflicts,
     get_effective_constraints,
@@ -1085,3 +1086,90 @@ def test_add_task_unexpected_exception_becomes_err(
 async def test_add_task_registered_with_mcp_singleton() -> None:
     tools = await mcp.list_tools()
     assert "add_task" in [t.name for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# check_dependencies wrapper
+# ---------------------------------------------------------------------------
+
+
+def _make_forbids_repo(tmp_path: Path) -> Path:
+    (tmp_path / ".specdd").mkdir()
+    (tmp_path / "app.sdd").write_text("Spec: App\n\nForbids:\n  stripe\n")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "service.sdd").write_text("Spec: Svc\n\nPurpose:\n  p\n")
+    return tmp_path
+
+
+def test_check_dependencies_returns_violations(tmp_path: Path) -> None:
+    repo = _make_forbids_repo(tmp_path)
+    result = check_dependencies(
+        target="src/service.sdd",
+        proposed_dependencies=["stripe-node", "react"],
+        repo_root=str(repo),
+    )
+    assert result["ok"] is True
+    assert len(result["data"]) == 1
+    v = result["data"][0]
+    assert v["dependency"] == "stripe-node"
+    assert v["kind"] == "forbids"
+    assert v["constraint"]["source"] == "app.sdd"
+
+
+def test_check_dependencies_clean_returns_empty(tmp_path: Path) -> None:
+    repo = _make_forbids_repo(tmp_path)
+    result = check_dependencies(
+        target="src/service.sdd",
+        proposed_dependencies=["react"],
+        repo_root=str(repo),
+    )
+    assert result["ok"] is True
+    assert result["data"] == []
+
+
+def test_check_dependencies_unknown_target_returns_err(tmp_path: Path) -> None:
+    repo = _make_forbids_repo(tmp_path)
+    result = check_dependencies(
+        target="ghost.sdd",
+        proposed_dependencies=["x"],
+        repo_root=str(repo),
+    )
+    assert result["ok"] is False
+    assert result["error"] == "NOT_FOUND"
+
+
+def test_check_dependencies_logs_invocation_and_result(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repo = _make_forbids_repo(tmp_path)
+    with caplog.at_level(logging.INFO, logger=TOOL_LOGGER):
+        check_dependencies(
+            target="src/service.sdd",
+            proposed_dependencies=["stripe-node"],
+            repo_root=str(repo),
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("check_dependencies called with" in m for m in messages)
+    assert any("check_dependencies → ok" in m for m in messages)
+
+
+def test_check_dependencies_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(**_: object) -> None:
+        raise RuntimeError("simulated deps bug")
+
+    monkeypatch.setattr("specdd_mcp.server.tools._check_dependencies", _raise)
+    result = check_dependencies(
+        target="/x", proposed_dependencies=["y"]
+    )
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated deps bug" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_check_dependencies_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "check_dependencies" in [t.name for t in tools]

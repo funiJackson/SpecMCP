@@ -453,6 +453,30 @@ AddTaskResult: TypeAlias = "Ok[AddTaskData] | Err"
 
 
 # ---------------------------------------------------------------------------
+# check_dependencies — proposed deps vs Forbids: / Must not: (DESIGN §6.1)
+# ---------------------------------------------------------------------------
+
+
+DependencyViolationKind: TypeAlias = Literal["forbids", "must_not"]
+
+
+class DependencyViolation(BaseModel):
+    """One proposed dependency that collides with an inherited rule.
+
+    ``kind`` records which section the violated rule came from. ``constraint``
+    carries the rule text plus ``source`` / ``line`` provenance so the caller
+    can quote exactly where the prohibition lives.
+    """
+
+    dependency: str
+    kind: DependencyViolationKind
+    constraint: Constraint
+
+
+CheckDependenciesResult: TypeAlias = "Ok[list[DependencyViolation]] | Err"
+
+
+# ---------------------------------------------------------------------------
 # validate_spec — single-file + (PR 7) cross-spec validation (DESIGN §5.7)
 # ---------------------------------------------------------------------------
 

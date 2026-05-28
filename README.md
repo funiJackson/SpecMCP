@@ -60,7 +60,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 
 ### What ships today
 
-`specdd-mcp` exposes **all 9 v1 tools**, plus the first **v2** tool:
+`specdd-mcp` exposes **all 9 v1 tools**, plus the first **v2** tools:
 
 | Tool | Status | What it does |
 |---|---|---|
@@ -74,6 +74,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 | `mcp__specdd__list_specs` | ✅ PR 8 | Repo-wide spec index with optional per-state task summaries |
 | `mcp__specdd__find_ownership_conflicts` | ✅ PR 8 | Multi-owner overlap detection across `Owns:` claims |
 | `mcp__specdd__add_task` | ✅ PR 9 | Byte-faithful insertion of a new `open` task (v2) |
+| `mcp__specdd__check_dependencies` | ✅ PR 10 | Vet proposed deps against inherited `Forbids:` / `Must not:` (v2) |
 
 The full `/specc` workflow runs end-to-end — see
 [Validating specs](#validating-specs) and

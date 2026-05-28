@@ -23,6 +23,9 @@ from pathlib import Path
 from typing import Any
 
 from specdd_mcp.operations.add_task import add_task as _add_task
+from specdd_mcp.operations.dependencies import (
+    check_dependencies as _check_dependencies,
+)
 from specdd_mcp.operations.merge import (
     build_effective_constraints as _build_effective_constraints,
 )
@@ -804,4 +807,77 @@ def add_task(
         ).model_dump()
     error_code = result.error if isinstance(result, Err) else None
     log_tool_result("add_task", ok=result.ok, error_code=error_code)
+    return result.model_dump()
+
+
+@mcp.tool()
+def check_dependencies(
+    target: str,
+    proposed_dependencies: list[str],
+    repo_root: str | None = None,
+) -> dict[str, Any]:
+    """Vet a proposed dependency list against the chain's prohibitions.
+
+    Use this before adding imports/packages to code governed by a spec —
+    prefer it over `Read`+grep on `.sdd` files, since it resolves the full
+    inheritance chain and merges every `Forbids:` / `Must not:` rule with
+    `path:line` provenance in one call.
+
+    Matching (mechanical, no judgment):
+      - `Forbids:` — a dep violates when a forbidden name is contained in it
+        (`forbid in dependency`). Same rule the `depends_on_vs_forbids`
+        conflict detector uses, so it stays consistent with
+        `get_effective_constraints`. High signal.
+      - `Must not:` — a dep violates when its name appears inside the rule
+        text (`dependency in rule`, case-insensitive). Higher false-positive
+        rate (short names can match incidentally) — treat as advisory.
+
+    Inputs:
+      target:                repo-relative (with `repo_root`) or absolute path
+                             to the file/dir the deps are being added to.
+      proposed_dependencies: module names / import paths to check. Empty list
+                             returns an empty `data`.
+      repo_root:             absolute path; auto-detected (`.specdd/`/`.git/`)
+                             when omitted.
+
+    Returns Result envelope. On success `data` is a list sorted by
+    `(dependency, kind, source, line)`:
+      {
+        "dependency": "<the proposed dep>",
+        "kind":       "forbids" | "must_not",
+        "constraint": {"rule": "...", "source": "<path>", "line": <int>}
+      }
+
+    An empty `data` means no proposed dependency collides with the chain.
+
+    Error codes (propagated from `resolve_spec_chain`):
+      INVALID_INPUT — relative `target` without `repo_root`
+      NOT_FOUND     — target missing, or no repo root detectable
+      OUT_OF_SCOPE  — target resolves outside `repo_root`
+    """
+    log_tool_invocation(
+        "check_dependencies",
+        {
+            "target": target,
+            "proposed_dependencies": proposed_dependencies,
+            "repo_root": repo_root,
+        },
+    )
+    try:
+        result = _check_dependencies(
+            target=target,
+            proposed_dependencies=proposed_dependencies,
+            repo_root=repo_root,
+        )
+    except Exception as exc:
+        log_tool_result(
+            "check_dependencies", ok=False, error_code="INVALID_INPUT"
+        )
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in check_dependencies: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    error_code = result.error if isinstance(result, Err) else None
+    log_tool_result("check_dependencies", ok=result.ok, error_code=error_code)
     return result.model_dump()
