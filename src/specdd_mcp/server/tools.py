@@ -22,6 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from specdd_mcp.operations.add_task import add_task as _add_task
 from specdd_mcp.operations.merge import (
     build_effective_constraints as _build_effective_constraints,
 )
@@ -717,4 +718,90 @@ def find_ownership_conflicts(
     log_tool_result(
         "find_ownership_conflicts", ok=result.ok, error_code=error_code
     )
+    return result.model_dump()
+
+
+@mcp.tool()
+def add_task(
+    spec_path: str,
+    text: str,
+    expected_content_hash: str,
+    task_id: str | None = None,
+    after_task_id: str | None = None,
+) -> dict[str, Any]:
+    """Insert a new `open` task into a `.sdd` file's `Tasks:` section.
+
+    A write tool — use it instead of `Edit` or shell redirection to add a
+    task, so the insertion is byte-faithful (every other line preserved:
+    BOM, CRLF/LF, indentation, multi-byte chars, comments), atomic (temp file
+    + rename), serialized by a per-file lock, and stale-checked via
+    `expected_content_hash` (same contract as `update_task_status`).
+
+    The new task is always created `open` (`[ ]`). Placement:
+      - `after_task_id` given → inserted right after that task, inheriting its
+        indent.
+      - otherwise → appended after the last task; if the `Tasks:` section is
+        empty it goes right under the header; if there is no `Tasks:` section
+        at all, one is appended at end of file (blank-line separated).
+
+    Recommended caller pattern:
+      1. `parse_spec(path=...)` → grab the file's SHA-256 (or reuse the
+         `new_content_hash` from a prior write).
+      2. Call this tool with that hash as `expected_content_hash`.
+      3. Chain further writes using the returned `new_content_hash`.
+
+    Inputs:
+      spec_path:             path to the `.sdd` file.
+      text:                  task text (after `[ ]` and the optional id);
+                             trimmed, must be non-empty and single-line.
+      expected_content_hash: SHA-256 you last observed for the file.
+      task_id:               optional `#N` id; rejected if malformed or already
+                             used.
+      after_task_id:         optional `#N` id of an existing task to insert
+                             after; appends when omitted.
+
+    Returns Result envelope. On success `data` is:
+      {
+        "spec_path":        "<path>",
+        "task":             ParsedTask,   # the inserted task, as written
+        "diff":             "<unified diff>",
+        "new_content_hash": "<SHA-256 of bytes written>"
+      }
+
+    Error codes:
+      INVALID_INPUT  — empty/multiline `text`, or malformed `task_id`
+      NOT_FOUND      — `spec_path` does not exist
+      ENCODING_ERROR — file is not valid UTF-8
+      STALE_FILE     — current SHA-256 ≠ `expected_content_hash`; re-parse and
+                       retry (details.expected_hash, details.actual_hash)
+      ALREADY_EXISTS — `task_id` is already used by a task in the spec
+      TASK_NOT_FOUND — `after_task_id` matched no task
+    """
+    log_tool_invocation(
+        "add_task",
+        {
+            "spec_path": spec_path,
+            "text": text,
+            "expected_content_hash": expected_content_hash,
+            "task_id": task_id,
+            "after_task_id": after_task_id,
+        },
+    )
+    try:
+        result = _add_task(
+            Path(spec_path),
+            text=text,
+            expected_content_hash=expected_content_hash,
+            task_id=task_id,
+            after_task_id=after_task_id,
+        )
+    except Exception as exc:
+        log_tool_result("add_task", ok=False, error_code="INVALID_INPUT")
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in add_task: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    error_code = result.error if isinstance(result, Err) else None
+    log_tool_result("add_task", ok=result.ok, error_code=error_code)
     return result.model_dump()

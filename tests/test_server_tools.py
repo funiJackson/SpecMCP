@@ -17,9 +17,11 @@ from pathlib import Path
 
 import pytest
 
+from specdd_mcp.operations.hashing import content_hash
 from specdd_mcp.server.app import mcp
 from specdd_mcp.server.logging import TOOL_LOGGER
 from specdd_mcp.server.tools import (
+    add_task,
     check_modification_scope,
     find_ownership_conflicts,
     get_effective_constraints,
@@ -1005,3 +1007,81 @@ def test_find_ownership_conflicts_unexpected_exception_becomes_err(
 async def test_find_ownership_conflicts_registered_with_mcp_singleton() -> None:
     tools = await mcp.list_tools()
     assert "find_ownership_conflicts" in [t.name for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# add_task wrapper
+# ---------------------------------------------------------------------------
+
+
+def _make_task_spec(tmp_path: Path) -> tuple[Path, str]:
+    spec = tmp_path / "a.sdd"
+    spec.write_text("Spec: A\n\nTasks:\n  [ ] one\n")
+    return spec, content_hash(spec.read_bytes())
+
+
+def test_add_task_returns_ok(tmp_path: Path) -> None:
+    spec, h = _make_task_spec(tmp_path)
+    result = add_task(spec_path=str(spec), text="two", expected_content_hash=h)
+    assert result["ok"] is True
+    assert result["data"]["task"]["text"] == "two"
+    assert result["data"]["task"]["state"] == "open"
+    assert result["data"]["new_content_hash"]
+    assert spec.read_text().endswith("  [ ] one\n  [ ] two\n")
+
+
+def test_add_task_with_id_and_anchor(tmp_path: Path) -> None:
+    spec = tmp_path / "a.sdd"
+    spec.write_text("Spec: A\n\nTasks:\n  [ ] #1 one\n  [ ] #3 three\n")
+    h = content_hash(spec.read_bytes())
+    result = add_task(
+        spec_path=str(spec),
+        text="two",
+        expected_content_hash=h,
+        task_id="#2",
+        after_task_id="#1",
+    )
+    assert result["ok"] is True
+    assert result["data"]["task"]["id"] == "#2"
+
+
+def test_add_task_stale_hash_returns_err(tmp_path: Path) -> None:
+    spec, _ = _make_task_spec(tmp_path)
+    result = add_task(
+        spec_path=str(spec), text="two", expected_content_hash="deadbeef"
+    )
+    assert result["ok"] is False
+    assert result["error"] == "STALE_FILE"
+
+
+def test_add_task_logs_invocation_and_result(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    spec, h = _make_task_spec(tmp_path)
+    with caplog.at_level(logging.INFO, logger=TOOL_LOGGER):
+        add_task(spec_path=str(spec), text="two", expected_content_hash=h)
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("add_task called with" in m for m in messages)
+    assert any("add_task → ok" in m for m in messages)
+
+
+def test_add_task_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(*_a: object, **_k: object) -> None:
+        raise RuntimeError("simulated add bug")
+
+    monkeypatch.setattr("specdd_mcp.server.tools._add_task", _raise)
+    result = add_task(
+        spec_path="/x", text="t", expected_content_hash="abc"
+    )
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated add bug" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_add_task_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "add_task" in [t.name for t in tools]

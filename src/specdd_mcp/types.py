@@ -429,6 +429,30 @@ UpdateTaskStatusResult: TypeAlias = "Ok[UpdateResult] | Err"
 
 
 # ---------------------------------------------------------------------------
+# add_task — insert a new task into a spec (DESIGN §6.3)
+# ---------------------------------------------------------------------------
+
+
+class AddTaskData(BaseModel):
+    """Success payload for ``add_task``.
+
+    Mirrors the write-tool envelope of :class:`UpdateResult`: a unified
+    ``diff`` and the post-write ``new_content_hash`` callers chain into their
+    next write. ``task`` is the newly inserted task as re-parsed from the
+    written bytes — so its ``line`` / ``indent`` / ``raw`` reflect exactly
+    what landed on disk.
+    """
+
+    spec_path: str
+    task: ParsedTask
+    diff: str
+    new_content_hash: str
+
+
+AddTaskResult: TypeAlias = "Ok[AddTaskData] | Err"
+
+
+# ---------------------------------------------------------------------------
 # validate_spec — single-file + (PR 7) cross-spec validation (DESIGN §5.7)
 # ---------------------------------------------------------------------------
 

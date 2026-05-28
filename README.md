@@ -60,7 +60,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 
 ### What ships today
 
-`specdd-mcp` exposes **all 9 planned v1 tools**:
+`specdd-mcp` exposes **all 9 v1 tools**, plus the first **v2** tool:
 
 | Tool | Status | What it does |
 |---|---|---|
@@ -73,12 +73,13 @@ claude mcp add specdd "$(which specdd-mcp)"
 | `mcp__specdd__validate_spec` | ✅ PR 5 + PR 7 | Spec health check — nine single-file rules plus three cross-spec inheritance rules |
 | `mcp__specdd__list_specs` | ✅ PR 8 | Repo-wide spec index with optional per-state task summaries |
 | `mcp__specdd__find_ownership_conflicts` | ✅ PR 8 | Multi-owner overlap detection across `Owns:` claims |
+| `mcp__specdd__add_task` | ✅ PR 9 | Byte-faithful insertion of a new `open` task (v2) |
 
 The full `/specc` workflow runs end-to-end — see
 [Validating specs](#validating-specs) and
 [Checking write scope before editing](#checking-write-scope-before-editing).
 
-See [`DESIGN.md`](./DESIGN.md) §5 for the full tool contracts and
+See [`DESIGN.md`](./DESIGN.md) §5–§6 for the full tool contracts and
 [`plans/`](./plans/) for the PR-by-PR implementation schedule.
 
 ### Manual verification
