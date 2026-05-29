@@ -2,7 +2,7 @@
 
 Deterministic MCP tools and a Claude Code slash command for working with [SpecDD](https://github.com/specdd/specdd) `.sdd` specification files.
 
-> **Status:** under active development. 12 MCP tools (all 9 v1 plus three v2: `add_task`, `check_dependencies`, `create_spec`) four slash commands (`/specc`, `/specc:audit`, `/specc:status`, `/specc:draft`), and a CLI (`serve`, `bootstrap`, `validate`, `version`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
+> **Status:** under active development. 12 MCP tools (all 9 v1 plus three v2: `add_task`, `check_dependencies`, `create_spec`) four slash commands (`/specc`, `/specc:audit`, `/specc:status`, `/specc:draft`), and a CLI (`serve`, `bootstrap`, `install-commands`, `validate`, `version`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
 
 ## What this is
 
@@ -113,6 +113,7 @@ specdd-mcp                          # start the MCP server on stdio (default)
 specdd-mcp serve                    # explicit alias for the above
 specdd-mcp bootstrap [DIR]          # drop .specdd/bootstrap*.md, AGENTS.md, CLAUDE.md
 specdd-mcp bootstrap --with-app     #   ...plus a starter app.sdd (via create_spec)
+specdd-mcp install-commands         # copy the /specc slash commands to ~/.claude/commands/
 specdd-mcp validate [PATH]          # validate one spec or every spec under PATH
 specdd-mcp version                  # print the package version
 ```
@@ -120,6 +121,9 @@ specdd-mcp version                  # print the package version
 - **`bootstrap`** refuses to clobber: existing files are skipped and reported,
   so re-running only fills in what's missing. `DIR` defaults to the current
   directory.
+- **`install-commands`** copies the bundled `/specc` slash commands into
+  `~/.claude/commands/` (override with `--dir`), preserving the `specc/`
+  subdirectory. Existing files are skipped unless `--force` is given.
 - **`validate`** parses and validates each spec (cross-spec inheritance rules
   run when a repo root is detectable), prints a per-finding report, and exits
   **non-zero if any errors are found** — drop it into CI as a gate. Warnings

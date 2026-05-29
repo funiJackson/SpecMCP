@@ -42,6 +42,21 @@ _BOOTSTRAP_FILES: tuple[tuple[str, str], ...] = (
     ("CLAUDE.md", "CLAUDE.md"),
 )
 
+#: Slash-command files shipped by ``install-commands``, as POSIX paths
+#: relative to both ``specdd_mcp/templates/commands/`` (the bundled source)
+#: and the install target (``~/.claude/commands/``). The repo-root ``commands/``
+#: tree is the human-editable source; a drift-guard test keeps the two equal.
+_COMMAND_FILES: tuple[str, ...] = (
+    "specc.md",
+    "specc/audit.md",
+    "specc/status.md",
+    "specc/draft.md",
+)
+
+#: Default install target for ``install-commands`` — Claude Code's user-level
+#: command directory.
+_DEFAULT_COMMANDS_DIR = Path.home() / ".claude" / "commands"
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Construct the argument parser. Default action (no subcommand) is serve."""
@@ -92,6 +107,23 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"walk-time cap on .sdd files (default: {DEFAULT_MAX_SPECS})",
     )
     validate.set_defaults(func=cmd_validate)
+
+    install = sub.add_parser(
+        "install-commands",
+        help="copy the /specc slash commands into ~/.claude/commands/",
+    )
+    install.add_argument(
+        "--dir",
+        dest="directory",
+        default=None,
+        help="install target (default: ~/.claude/commands)",
+    )
+    install.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite command files that already exist",
+    )
+    install.set_defaults(func=cmd_install_commands)
 
     version = sub.add_parser("version", help="print the package version")
     version.set_defaults(func=cmd_version)
@@ -184,6 +216,38 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_install_commands(args: argparse.Namespace) -> int:
+    """Copy the bundled ``/specc`` slash commands into a commands directory.
+
+    Defaults to ``~/.claude/commands/``. Existing files are skipped (and
+    reported) unless ``--force`` is given. Subdirectory structure is preserved
+    so ``specc/audit.md`` lands as ``specc/audit.md``.
+    """
+    target = Path(args.directory) if args.directory else _DEFAULT_COMMANDS_DIR
+    created: list[str] = []
+    skipped: list[str] = []
+    overwritten: list[str] = []
+
+    for rel in _COMMAND_FILES:
+        dest = target / rel
+        exists = dest.exists()
+        if exists and not args.force:
+            skipped.append(rel)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(_command_template(rel), encoding="utf-8")
+        (overwritten if exists else created).append(rel)
+
+    for rel in created:
+        print(f"installed  {rel}")
+    for rel in overwritten:
+        print(f"overwrote  {rel}")
+    for rel in skipped:
+        print(f"skipped    {rel} (already exists — use --force to overwrite)")
+    print(f"\ntarget: {target}")
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     """Validate one spec or every spec under a path. Exit 1 if any errors.
 
@@ -250,6 +314,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def _template(name: str) -> str:
     """Read a bundled bootstrap template by filename."""
     return (files("specdd_mcp.templates") / name).read_text(encoding="utf-8")
+
+
+def _command_template(rel: str) -> str:
+    """Read a bundled slash-command file by its POSIX-relative path.
+
+    ``rel`` may contain ``/`` (e.g. ``specc/audit.md``); each segment is
+    navigated in turn so it works through ``importlib.resources`` whether the
+    package runs from source or a wheel.
+    """
+    node = files("specdd_mcp.templates") / "commands"
+    for segment in rel.split("/"):
+        node = node / segment
+    return node.read_text(encoding="utf-8")
 
 
 def _label(spec_path: Path, repo_root: Path | None) -> str:

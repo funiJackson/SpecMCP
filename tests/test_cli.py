@@ -160,3 +160,52 @@ def test_validate_unparseable_spec_counts_as_error(
     code = cli.main(["validate", str(tmp_path)])
     assert code == 1
     assert "error" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# install-commands
+# ---------------------------------------------------------------------------
+
+
+def test_install_commands_writes_all_files(tmp_path: Path) -> None:
+    code = cli.main(["install-commands", "--dir", str(tmp_path)])
+    assert code == 0
+    assert (tmp_path / "specc.md").exists()
+    assert (tmp_path / "specc" / "audit.md").exists()
+    assert (tmp_path / "specc" / "status.md").exists()
+    assert (tmp_path / "specc" / "draft.md").exists()
+
+
+def test_install_commands_refuses_to_clobber(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    existing = tmp_path / "specc.md"
+    existing.write_text("MINE\n")
+    code = cli.main(["install-commands", "--dir", str(tmp_path)])
+    assert code == 0
+    assert existing.read_text() == "MINE\n"  # untouched
+    out = capsys.readouterr().out
+    assert "skipped    specc.md" in out
+    assert "installed  specc/audit.md" in out  # the rest still installed
+
+
+def test_install_commands_force_overwrites(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    existing = tmp_path / "specc.md"
+    existing.write_text("MINE\n")
+    code = cli.main(["install-commands", "--dir", str(tmp_path), "--force"])
+    assert code == 0
+    assert existing.read_text() != "MINE\n"  # overwritten with the real command
+    assert "overwrote  specc.md" in capsys.readouterr().out
+
+
+def test_bundled_commands_match_repo_root_source() -> None:
+    """Drift guard: the packaged copies under templates/commands/ must be
+    byte-identical to the human-editable source under the repo-root commands/.
+    If this fails, someone edited one copy and not the other."""
+    repo_root = Path(__file__).resolve().parents[1]
+    for rel in cli._COMMAND_FILES:
+        bundled = cli._command_template(rel)
+        source = (repo_root / "commands" / rel).read_text(encoding="utf-8")
+        assert bundled == source, f"{rel} drifted between commands/ and templates/"
