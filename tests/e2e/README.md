@@ -50,7 +50,7 @@ claude
 In the session, run `/mcp`. Expected:
 
 - [ ] `specdd` appears in the connected-servers list
-- [ ] Seven tools listed:
+- [ ] 13 tools listed — the 9 v1 tools:
   - [ ] `parse_spec`
   - [ ] `resolve_spec_chain`
   - [ ] `list_tasks`
@@ -58,8 +58,17 @@ In the session, run `/mcp`. Expected:
   - [ ] `update_task_status`
   - [ ] `check_modification_scope`
   - [ ] `validate_spec`
-- [ ] Each read-tool description begins with "Prefer this over..." and
-      `update_task_status` advertises itself as "the **only** write tool"
+  - [ ] `list_specs`
+  - [ ] `find_ownership_conflicts`
+- [ ] ...plus the 4 v2 tools:
+  - [ ] `add_task`
+  - [ ] `check_dependencies`
+  - [ ] `create_spec`
+  - [ ] `bootstrap_project`
+- [ ] Read-tool descriptions carry the "Prefer this over..." pitch;
+      `update_task_status` advertises itself as "the **only** tool that
+      changes a task's state" (no longer the *only* write tool — `add_task`,
+      `create_spec`, and `bootstrap_project` also write)
 
 If the server shows as failed/disconnected:
 
@@ -181,7 +190,7 @@ Now test conflict surfacing on one of the conflict fixtures:
 - [ ] Both sides carry source paths AND line numbers
 - [ ] Claude correctly identifies this as a STOP-level conflict (not advisory)
 
-## 9. Smoke test: update_task_status (PR 4) — **the only write tool**
+## 9. Smoke test: update_task_status (PR 4) — **the task-state write tool**
 
 This is the highest-risk surface in the server: it touches files on disk.
 The e2e gate exercises (a) byte-preservation, (b) the STALE_FILE recovery
@@ -324,17 +333,26 @@ Expected:
 
 - [ ] `ok: true`
 - [ ] `summary.errors == 0` (the canonical fixture is clean)
-- [ ] `check_inheritance=true` is accepted and adds no cross-spec issues
-      (deferred to PR 7) — no error, no extra findings
+- [ ] `check_inheritance=true` runs the cross-spec rules (`DUPLICATE_PARENT_RULE`,
+      `CONFLICTING_INHERITANCE`, `TASK_VIOLATES_MUSTNOT`); the clean fixture
+      surfaces none — no error, no extra findings
 
-Then exercise an error rule:
+Then exercise the error rules:
 
 > Call `mcp__specdd__validate_spec` with `content` set to
-> `Tasks:\n  [y] #1 bad state\n  [ ] #1 dupe id\n`.
+> `Tasks:\n  [y] #1 bad state\n  [ ] #2 ok\n`.
 
 - [ ] `summary.errors >= 2`
-- [ ] `issues` includes `MISSING_SPEC_HEADER`, `INVALID_TASK_STATE`,
-      and `DUPLICATE_TASK_ID`, each with a `line`
+- [ ] `issues` includes `MISSING_SPEC_HEADER` and `INVALID_TASK_STATE`,
+      each with a `line` (the `[y]` line is rejected as an invalid state)
+
+To see `DUPLICATE_TASK_ID`, two **valid** tasks must share an id — an
+invalid-state line isn't counted as a task:
+
+> Call `mcp__specdd__validate_spec` with `content` set to
+> `Spec: Dup\n\nTasks:\n  [ ] #1 one\n  [ ] #1 two\n`.
+
+- [ ] `issues` includes `DUPLICATE_TASK_ID` with a `line`
 
 ## 12. Full `/specc` flow (PR 5) — **the whole workflow, end to end**
 
@@ -364,7 +382,58 @@ Then confirm the file landed correctly:
 > Restore the fixture afterward: `git checkout
 > tests/fixtures/chains/simple_3_level/`
 
-## 13. Cleanup
+## 13. v2 tools (quick pass)
+
+The four v2 tools. Behavior is covered deterministically by the automated
+suite; this is a UI/round-trip sanity pass in a real session.
+
+> Use `mcp__specdd__list_specs` on the repo root of
+> `tests/fixtures/chains/simple_3_level/`.
+
+- [ ] `ok: true`, 3 entries (`app`, `module`, `service`), each with a
+      `task_summary` of per-state counts.
+
+> Use `mcp__specdd__find_ownership_conflicts` on the same repo root.
+
+- [ ] `ok: true`, `data` is a list (empty for this single-owner fixture).
+
+> Use `mcp__specdd__check_dependencies` on
+> `tests/fixtures/chains_with_conflicts/depends_on_vs_forbids/src/code.ts`
+> with `proposed_dependencies` set to `["stripe-sdk", "react"]`.
+
+- [ ] `stripe-sdk` is flagged `kind: "forbids"` with `path:line` provenance;
+      `react` is not flagged.
+
+In a scratch dir (e.g. `/tmp/specdd-v2`):
+
+> Use `mcp__specdd__create_spec` to scaffold `/tmp/specdd-v2/svc.sdd`
+> (name "Svc", a purpose, one task). Then `mcp__specdd__add_task` to add a
+> second task using the returned `content_hash`. Then
+> `mcp__specdd__bootstrap_project` on `/tmp/specdd-v2/repo` with
+> `with_app=true`.
+
+- [ ] `create_spec` writes the file (refuses to overwrite on a second call).
+- [ ] `add_task` appends the second task using the chained hash (no re-read).
+- [ ] `bootstrap_project` creates `.specdd/bootstrap*.md`, `AGENTS.md`,
+      `CLAUDE.md`, and `app.sdd`; a re-run reports them all `skipped`.
+- [ ] Cleanup: `rm -rf /tmp/specdd-v2`.
+
+## 14. CLI surface (no MCP client needed)
+
+Run directly in a shell — these don't go through Claude:
+
+```bash
+specdd-mcp version                     # prints the version
+specdd-mcp validate tests/fixtures/chains/simple_3_level/   # exit 0, all clean
+specdd-mcp bootstrap /tmp/specdd-cli   # creates bootstrap files; re-run skips
+specdd-mcp install-commands --dir /tmp/specdd-cli/cmds      # copies /specc commands
+rm -rf /tmp/specdd-cli
+```
+
+- [ ] `validate` exits non-zero when pointed at a spec with an error
+      (e.g. a file containing `Tasks:\n  [ ] #1 a\n  [ ] #1 b\n`).
+
+## 15. Cleanup
 
 ```bash
 claude mcp remove specdd

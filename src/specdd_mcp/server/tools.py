@@ -317,9 +317,10 @@ def update_task_status(
 ) -> dict[str, Any]:
     """Atomically update one or more task states in a single `.sdd` file.
 
-    This is the **only** write tool — use it instead of `Edit` or shell
-    redirection whenever you need to flip a task between states. The wrapper
-    guarantees:
+    This is the **only** tool that changes a task's state — use it instead of
+    `Edit` or shell redirection whenever you need to flip a task between
+    states. (To add a new task use `add_task`; to create a spec use
+    `create_spec`.) The wrapper guarantees:
       - byte-faithful preservation of every other line in the file
       (BOM, CRLF/LF, indentation, multi-byte chars, comments)
       - atomic write via temp file + rename (no torn writes ever visible)
