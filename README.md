@@ -2,7 +2,7 @@
 
 Deterministic MCP tools and a Claude Code slash command for working with [SpecDD](https://github.com/specdd/specdd) `.sdd` specification files.
 
-> **Status:** under active development. 12 MCP tools (all 9 v1 plus three v2: `add_task`, `check_dependencies`, `create_spec`) and four slash commands (`/specc`, `/specc:audit`, `/specc:status`, `/specc:draft`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
+> **Status:** under active development. 12 MCP tools (all 9 v1 plus three v2: `add_task`, `check_dependencies`, `create_spec`) four slash commands (`/specc`, `/specc:audit`, `/specc:status`, `/specc:draft`), and a CLI (`serve`, `bootstrap`, `validate`, `version`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
 
 ## What this is
 
@@ -103,6 +103,27 @@ python -m specdd_mcp
 
 Logs are written to stderr (`stdout` is reserved for the protocol). The
 server runs until its stdin closes — see `__main__.py` for the entry point.
+
+### CLI subcommands
+
+The bare invocation starts the server; subcommands cover setup and CI:
+
+```bash
+specdd-mcp                          # start the MCP server on stdio (default)
+specdd-mcp serve                    # explicit alias for the above
+specdd-mcp bootstrap [DIR]          # drop .specdd/bootstrap*.md, AGENTS.md, CLAUDE.md
+specdd-mcp bootstrap --with-app     #   ...plus a starter app.sdd (via create_spec)
+specdd-mcp validate [PATH]          # validate one spec or every spec under PATH
+specdd-mcp version                  # print the package version
+```
+
+- **`bootstrap`** refuses to clobber: existing files are skipped and reported,
+  so re-running only fills in what's missing. `DIR` defaults to the current
+  directory.
+- **`validate`** parses and validates each spec (cross-spec inheritance rules
+  run when a repo root is detectable), prints a per-finding report, and exits
+  **non-zero if any errors are found** — drop it into CI as a gate. Warnings
+  don't fail the build.
 
 ## How the parser works
 
