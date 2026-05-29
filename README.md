@@ -2,7 +2,7 @@
 
 Deterministic MCP tools and a Claude Code slash command for working with [SpecDD](https://github.com/specdd/specdd) `.sdd` specification files.
 
-> **Status:** under active development. v1 ships 9 MCP tools, 2 slash commands, and a CLI. See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
+> **Status:** under active development. 12 MCP tools (all 9 v1 plus three v2: `add_task`, `check_dependencies`, `create_spec`) and three slash commands (`/specc`, `/specc:audit`, `/specc:status`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
 
 ## What this is
 
@@ -24,6 +24,8 @@ See [`DESIGN.md`](./DESIGN.md) for the long form.
 - [`DESIGN.md`](./DESIGN.md) — full design contract for the server, tools, and surfaces.
 - [`SKILL.md`](./SKILL.md) — the minimal ambient skill (nudges users toward `/specc`).
 - [`commands/specc.md`](./commands/specc.md) — the main slash command playbook.
+- [`commands/specc/audit.md`](./commands/specc/audit.md) — `/specc:audit`, repo-wide spec health check.
+- [`commands/specc/status.md`](./commands/specc/status.md) — `/specc:status`, open-task dashboard grouped by spec.
 - [`plans/`](./plans/) — per-PR implementation plans (PR 1 through PR 5).
 
 ## Install (development)
