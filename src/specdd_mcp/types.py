@@ -499,6 +499,28 @@ CreateSpecResult: TypeAlias = "Ok[CreateSpecData] | Err"
 
 
 # ---------------------------------------------------------------------------
+# bootstrap_project — initialize SpecDD in a repo (DESIGN §6.4)
+# ---------------------------------------------------------------------------
+
+
+class BootstrapData(BaseModel):
+    """Success payload for ``bootstrap_project`` / the CLI ``bootstrap``.
+
+    ``created`` and ``skipped`` are repo-relative POSIX paths: files written
+    this run, and files left untouched because they already existed (bootstrap
+    never clobbers). Both empty-checks let a caller tell "fresh init" from
+    "already set up".
+    """
+
+    directory: str
+    created: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+
+
+BootstrapResult: TypeAlias = "Ok[BootstrapData] | Err"
+
+
+# ---------------------------------------------------------------------------
 # validate_spec — single-file + (PR 7) cross-spec validation (DESIGN §5.7)
 # ---------------------------------------------------------------------------
 

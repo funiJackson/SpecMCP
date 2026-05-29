@@ -2,7 +2,7 @@
 
 Deterministic MCP tools and a Claude Code slash command for working with [SpecDD](https://github.com/specdd/specdd) `.sdd` specification files.
 
-> **Status:** under active development. 12 MCP tools (all 9 v1 plus three v2: `add_task`, `check_dependencies`, `create_spec`) four slash commands (`/specc`, `/specc:audit`, `/specc:status`, `/specc:draft`), and a CLI (`serve`, `bootstrap`, `install-commands`, `validate`, `version`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
+> **Status:** under active development. 13 MCP tools (all 9 v1 plus all four v2: `add_task`, `check_dependencies`, `create_spec`, `bootstrap_project`) four slash commands (`/specc`, `/specc:audit`, `/specc:status`, `/specc:draft`), and a CLI (`serve`, `bootstrap`, `install-commands`, `validate`, `version`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.
 
 ## What this is
 
@@ -79,6 +79,7 @@ claude mcp add specdd "$(which specdd-mcp)"
 | `mcp__specdd__add_task` | ✅ PR 9 | Byte-faithful insertion of a new `open` task (v2) |
 | `mcp__specdd__check_dependencies` | ✅ PR 10 | Vet proposed deps against inherited `Forbids:` / `Must not:` (v2) |
 | `mcp__specdd__create_spec` | ✅ PR 11 | Scaffold a new `.sdd` file with canonical formatting; validates, refuses overwrite (v2) |
+| `mcp__specdd__bootstrap_project` | ✅ v2 | Initialize SpecDD in a repo (mirror of the `bootstrap` CLI); refuses overwrite (v2) |
 
 The full `/specc` workflow runs end-to-end — see
 [Validating specs](#validating-specs) and

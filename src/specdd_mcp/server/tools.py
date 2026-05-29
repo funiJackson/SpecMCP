@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from specdd_mcp.operations.add_task import add_task as _add_task
+from specdd_mcp.operations.bootstrap import bootstrap_project as _bootstrap_project
 from specdd_mcp.operations.create_spec import create_spec as _create_spec
 from specdd_mcp.operations.dependencies import (
     check_dependencies as _check_dependencies,
@@ -984,4 +985,59 @@ def create_spec(
         ).model_dump()
     error_code = result.error if isinstance(result, Err) else None
     log_tool_result("create_spec", ok=result.ok, error_code=error_code)
+    return result.model_dump()
+
+
+@mcp.tool()
+def bootstrap_project(
+    directory: str,
+    with_app: bool = False,
+) -> dict[str, Any]:
+    """Initialize SpecDD in a repo by writing the bootstrap files.
+
+    The MCP mirror of the `specdd-mcp bootstrap` CLI subcommand — use it to set
+    a project up from an MCP client that can't shell out. Drops the canonical
+    SpecDD bootstrap files, **refusing to overwrite** anything that exists:
+
+      - `.specdd/bootstrap.md`         — the full SpecDD workflow doc
+      - `.specdd/bootstrap.project.md` — project-level overrides stub
+      - `.specdd/bootstrap.local.md`   — user-local overrides stub
+      - `AGENTS.md`                    — points agents at `.specdd/bootstrap.md`
+      - `CLAUDE.md`                    — defers to `AGENTS.md`
+      - `app.sdd` (only with `with_app=true`) — a starter app-level spec
+
+    Re-running is safe: files that already exist are reported under `skipped`
+    rather than overwritten, so a second call only fills in what's missing.
+
+    Inputs:
+      directory: target repo directory (missing parent dirs are created).
+      with_app:  also scaffold a starter `app.sdd` (default false).
+
+    Returns Result envelope. On success `data` is:
+      {
+        "directory": "<target>",
+        "created":   ["<repo-relative path>", ...],   # written this call
+        "skipped":   ["<repo-relative path>", ...]     # already existed
+      }
+
+    A `created` list that is empty means the repo was already bootstrapped.
+
+    Error codes:
+      INVALID_INPUT — unexpected failure (e.g. the directory isn't writable)
+    """
+    log_tool_invocation(
+        "bootstrap_project",
+        {"directory": directory, "with_app": with_app},
+    )
+    try:
+        result = _bootstrap_project(Path(directory), with_app=with_app)
+    except Exception as exc:
+        log_tool_result("bootstrap_project", ok=False, error_code="INVALID_INPUT")
+        return Err(
+            error="INVALID_INPUT",
+            message=f"unexpected error in bootstrap_project: {exc}",
+            details={"exception_type": type(exc).__name__},
+        ).model_dump()
+    error_code = result.error if isinstance(result, Err) else None
+    log_tool_result("bootstrap_project", ok=result.ok, error_code=error_code)
     return result.model_dump()

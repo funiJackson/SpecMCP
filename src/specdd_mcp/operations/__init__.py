@@ -15,6 +15,7 @@ Modules:
 - :mod:`add_task` — ``add_task`` byte-faithful task insertion (DESIGN §6.3).
 - :mod:`dependencies` — ``check_dependencies`` deps vs Forbids/Must not (§6.1).
 - :mod:`create_spec` — ``create_spec`` new-file scaffolding (DESIGN §6.2).
+- :mod:`bootstrap` — ``bootstrap_project`` repo init, shared by CLI (§6.4).
 
 Layering rule (enforced by convention, not tooling): operations import from
 ``parser`` and ``paths``, never the other way round. Anything that needs to

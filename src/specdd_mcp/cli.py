@@ -25,22 +25,12 @@ from importlib.resources import files
 from pathlib import Path
 
 from specdd_mcp import __version__
-from specdd_mcp.operations.create_spec import create_spec
+from specdd_mcp.operations.bootstrap import bootstrap_project
 from specdd_mcp.operations.validation import run_validation
 from specdd_mcp.operations.walks import DEFAULT_MAX_SPECS, TooLargeError, walk_specs
 from specdd_mcp.parser.parse_spec import parse_spec
 from specdd_mcp.paths import find_repo_root, to_repo_relative
 from specdd_mcp.types import Err
-
-#: Bootstrap files written by ``bootstrap``, mapped to their template name in
-#: :mod:`specdd_mcp.templates`. Order is the report order.
-_BOOTSTRAP_FILES: tuple[tuple[str, str], ...] = (
-    (".specdd/bootstrap.md", "bootstrap.md"),
-    (".specdd/bootstrap.project.md", "bootstrap.project.md"),
-    (".specdd/bootstrap.local.md", "bootstrap.local.md"),
-    ("AGENTS.md", "AGENTS.md"),
-    ("CLAUDE.md", "CLAUDE.md"),
-)
 
 #: Slash-command files shipped by ``install-commands``, as POSIX paths
 #: relative to both ``specdd_mcp/templates/commands/`` (the bundled source)
@@ -174,44 +164,22 @@ def cmd_version(_args: argparse.Namespace) -> int:
 def cmd_bootstrap(args: argparse.Namespace) -> int:
     """Write the SpecDD bootstrap files into ``args.directory``.
 
-    Existing files are never overwritten — each is skipped and reported. With
-    ``--with-app``, a starter ``app.sdd`` is scaffolded via ``create_spec``
-    (which also refuses to clobber).
+    Delegates to :func:`~specdd_mcp.operations.bootstrap.bootstrap_project`
+    (shared with the ``bootstrap_project`` MCP tool) and renders the result.
+    Existing files are never overwritten — each is skipped and reported.
     """
-    target = Path(args.directory)
-    created: list[str] = []
-    skipped: list[str] = []
+    result = bootstrap_project(Path(args.directory), with_app=args.with_app)
+    if isinstance(result, Err):  # pragma: no cover — bootstrap returns Ok
+        print(f"error {result.error}: {result.message}")
+        return 1
 
-    for rel, template_name in _BOOTSTRAP_FILES:
-        dest = target / rel
-        if dest.exists():
-            skipped.append(rel)
-            continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(_template(template_name), encoding="utf-8")
-        created.append(rel)
-
-    if args.with_app:
-        app_name = target.resolve().name or "App"
-        result = create_spec(
-            target / "app.sdd",
-            name=app_name,
-            level="app",
-            purpose=f"Top-level spec for {app_name}.",
-        )
-        if isinstance(result, Err):
-            if result.error == "ALREADY_EXISTS":
-                skipped.append("app.sdd")
-            else:  # pragma: no cover — generated app spec is always valid
-                print(f"could not scaffold app.sdd: {result.message}")
-        else:
-            created.append("app.sdd")
-
-    for rel in created:
+    for rel in result.data.created:
         print(f"created  {rel}")
-    for rel in skipped:
+    for rel in result.data.skipped:
         print(f"skipped  {rel} (already exists)")
-    if not created:
+    for warning in result.warnings:
+        print(warning)
+    if not result.data.created:
         print("nothing to do — every bootstrap file already exists")
     return 0
 

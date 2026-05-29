@@ -22,6 +22,7 @@ from specdd_mcp.server.app import mcp
 from specdd_mcp.server.logging import TOOL_LOGGER
 from specdd_mcp.server.tools import (
     add_task,
+    bootstrap_project,
     check_dependencies,
     check_modification_scope,
     create_spec,
@@ -1247,3 +1248,62 @@ def test_create_spec_unexpected_exception_becomes_err(
 async def test_create_spec_registered_with_mcp_singleton() -> None:
     tools = await mcp.list_tools()
     assert "create_spec" in [t.name for t in tools]
+
+
+# ---------------------------------------------------------------------------
+# bootstrap_project wrapper
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_project_creates_files(tmp_path: Path) -> None:
+    result = bootstrap_project(directory=str(tmp_path))
+    assert result["ok"] is True
+    assert ".specdd/bootstrap.md" in result["data"]["created"]
+    assert "AGENTS.md" in result["data"]["created"]
+    assert result["data"]["skipped"] == []
+    assert (tmp_path / "AGENTS.md").exists()
+
+
+def test_bootstrap_project_with_app(tmp_path: Path) -> None:
+    result = bootstrap_project(directory=str(tmp_path), with_app=True)
+    assert result["ok"] is True
+    assert "app.sdd" in result["data"]["created"]
+    assert (tmp_path / "app.sdd").exists()
+
+
+def test_bootstrap_project_refuses_clobber(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text("MINE\n")
+    result = bootstrap_project(directory=str(tmp_path))
+    assert result["ok"] is True
+    assert "CLAUDE.md" in result["data"]["skipped"]
+    assert (tmp_path / "CLAUDE.md").read_text() == "MINE\n"
+
+
+def test_bootstrap_project_logs_invocation_and_result(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger=TOOL_LOGGER):
+        bootstrap_project(directory=str(tmp_path))
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("bootstrap_project called with" in m for m in messages)
+    assert any("bootstrap_project → ok" in m for m in messages)
+
+
+def test_bootstrap_project_unexpected_exception_becomes_err(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(*_a: object, **_k: object) -> None:
+        raise RuntimeError("simulated bootstrap bug")
+
+    monkeypatch.setattr("specdd_mcp.server.tools._bootstrap_project", _raise)
+    result = bootstrap_project(directory="/x")
+    assert result["ok"] is False
+    assert result["error"] == "INVALID_INPUT"
+    assert "simulated bootstrap bug" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_project_registered_with_mcp_singleton() -> None:
+    tools = await mcp.list_tools()
+    assert "bootstrap_project" in [t.name for t in tools]
