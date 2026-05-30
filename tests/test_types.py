@@ -117,7 +117,7 @@ def _make_full_parsed_spec() -> ParsedSpec:
         level="service",
         raw="Spec: Invoice Service\n...full content...\n",
         line_count=42,
-        parser_version="0.1.0",
+        parser_version="0.2.0",
         platform="TypeScript/Node",
         purpose="Coordinate invoice creation.",
         structure=[
@@ -185,7 +185,7 @@ def test_minimal_parsed_spec_round_trip() -> None:
         level="unknown",
         raw="Spec: Example\n",
         line_count=1,
-        parser_version="0.1.0",
+        parser_version="0.2.0",
     )
     revived = _round_trip(spec)
     assert revived.purpose is None

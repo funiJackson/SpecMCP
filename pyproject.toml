@@ -1,6 +1,6 @@
 [project]
 name = "specdd-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic MCP tools and slash commands for working with SpecDD .sdd specification files"
 readme = "README.md"
 requires-python = ">=3.10"
