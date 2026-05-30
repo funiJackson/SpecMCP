@@ -1,5 +1,8 @@
 # specdd-mcp
 
+[![CI](https://github.com/funiJackson/SpecMCP/actions/workflows/ci.yml/badge.svg)](https://github.com/funiJackson/SpecMCP/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+
 Deterministic MCP tools and a Claude Code slash command for working with [SpecDD](https://github.com/specdd/specdd) `.sdd` specification files.
 
 > **Status:** under active development. 13 MCP tools (all 9 v1 plus all four v2: `add_task`, `check_dependencies`, `create_spec`, `bootstrap_project`) four slash commands (`/specc`, `/specc:audit`, `/specc:status`, `/specc:draft`), and a CLI (`serve`, `bootstrap`, `install-commands`, `validate`, `version`). See [`DESIGN.md`](./DESIGN.md) for the full design, and [`plans/`](./plans/) for per-PR implementation plans.

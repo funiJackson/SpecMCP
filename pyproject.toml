@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [
-    { name = "SpecMCP contributors" },
+    { name = "funiJackson", email = "fandizhou00@gmail.com" },
 ]
 keywords = ["mcp", "specdd", "claude-code", "spec-driven-development"]
 classifiers = [
@@ -22,6 +22,11 @@ dependencies = [
     "pydantic>=2.5",
     "mcp[cli]>=1.0,<2.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/funiJackson/SpecMCP"
+Repository = "https://github.com/funiJackson/SpecMCP"
+Issues = "https://github.com/funiJackson/SpecMCP/issues"
 
 [project.optional-dependencies]
 dev = [
