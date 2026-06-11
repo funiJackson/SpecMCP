@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpecDD MCP — Deterministic tools for spec-driven development</title>
+
+<!-- Monospace + display fonts (terminal aesthetic) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Space+Grotesk:wght@400;500;700&display=swap">
+
+<style>
+/* ===========================================================================
+   THEME — "Terminal Green"
+   Dark phosphor terminal: deep green-black ground, soft green-white text,
+   electric phosphor-green accent, amber for secondary signal.
+   Change these vars to retheme the whole deck.
+   =========================================================================== */
+:root {
+    /* Colors */
+    --bg-0:        #04070500;            /* transparent helper */
+    --bg-primary:  #050a06;              /* deepest ground */
+    --bg-panel:    #0a120b;              /* card / panel */
+    --bg-panel-2:  #0d180e;              /* raised panel */
+    --line:        #1c2e1d;              /* hairline borders */
+    --text:        #cdeccd;              /* primary text (phosphor white-green) */
+    --text-dim:    #6f906f;              /* secondary text */
+    --text-faint:  #3f573f;              /* tertiary / comments */
+    --accent:      #2bff88;              /* phosphor green */
+    --accent-2:    #ffb454;              /* amber signal */
+    --accent-3:    #54b9ff;              /* cool blue (links / data) */
+    --danger:      #ff5d5d;              /* errors */
+    --glow:        rgba(43, 255, 136, 0.35);
+    --glow-soft:   rgba(43, 255, 136, 0.12);
+
+    /* Typography */
+    --font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --font-display: 'Space Grotesk', var(--font-mono);
+
+    --title-size:    clamp(2rem, 6.5vw, 5.5rem);
+    --h2-size:       clamp(1.4rem, 3.8vw, 2.9rem);
+    --h3-size:       clamp(1rem, 2.2vw, 1.5rem);
+    --body-size:     clamp(0.8rem, 1.35vw, 1.05rem);
+    --small-size:    clamp(0.66rem, 1vw, 0.85rem);
+    --mono-tag:      clamp(0.62rem, 0.95vw, 0.8rem);
+
+    /* Spacing */
+    --slide-padding: clamp(1.4rem, 4.5vw, 4.5rem);
+    --content-gap:   clamp(0.8rem, 2vw, 1.8rem);
+    --element-gap:   clamp(0.35rem, 1vw, 0.9rem);
+    --maxw:          min(94vw, 1180px);
+
+    /* Motion */
+    --ease:      cubic-bezier(0.16, 1, 0.3, 1);
+    --dur:       0.7s;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html {
+    scroll-behavior: smooth;
+    scroll-snap-type: y mandatory;
+    height: 100%;
+    background: var(--bg-primary);
+}
+
+body {
+    font-family: var(--font-mono);
+    background: var(--bg-primary);
+    color: var(--text);
+    height: 100%;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+}
+
+/* ===========================================================================
+   GLOBAL TERMINAL ATMOSPHERE
+   A fixed faint grid + scanline overlay + vignette behind every slide.
+   =========================================================================== */
+.fx {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+}
+.fx.grid {
+    background-image:
+        linear-gradient(rgba(43,255,136,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(43,255,136,0.035) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(ellipse 80% 80% at 50% 45%, #000 35%, transparent 100%);
+}
+.fx.scan {
+    background: repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0) 0px,
+        rgba(0,0,0,0) 2px,
+        rgba(0,0,0,0.18) 3px,
+        rgba(0,0,0,0) 4px);
+    mix-blend-mode: multiply;
+    opacity: 0.5;
+}
+.fx.vignette {
+    background: radial-gradient(ellipse 70% 70% at 50% 40%, transparent 40%, rgba(0,0,0,0.55) 100%);
+}
+.fx.glowfield {
+    background:
+        radial-gradient(ellipse 50% 60% at 15% 15%, rgba(43,255,136,0.10), transparent 60%),
+        radial-gradient(ellipse 50% 50% at 90% 85%, rgba(84,185,255,0.06), transparent 60%);
+}
+
+/* ===========================================================================
+   SLIDE SCAFFOLD — each slide is exactly one viewport, never scrolls
+   =========================================================================== */
+.slide {
+    position: relative;
+    z-index: 1;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    padding: var(--slide-padding);
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+}
+.slide-content {
+    width: var(--maxw);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--content-gap);
+    max-height: 100%;
+    overflow: hidden;
+}
+
+/* Top status bar present on every slide (terminal chrome) */
+.statusbar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: clamp(1.9rem, 3.4vh, 2.6rem);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0 clamp(0.8rem, 2.5vw, 1.6rem);
+    font-size: var(--mono-tag);
+    color: var(--text-faint);
+    border-bottom: 1px solid var(--line);
+    background: rgba(5,10,6,0.6);
+    backdrop-filter: blur(2px);
+    z-index: 5;
+}
+.statusbar .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--text-faint); }
+.statusbar .dot.r { background: #ff5f56; } .statusbar .dot.y { background: #ffbd2e; } .statusbar .dot.g { background: #27c93f; }
+.statusbar .path { color: var(--text-dim); }
+.statusbar .right { margin-left: auto; display: flex; gap: 1.1rem; }
+.statusbar .right .ok { color: var(--accent); }
+
+/* ===========================================================================
+   TYPOGRAPHY HELPERS
+   =========================================================================== */
+.kicker {
+    font-size: var(--mono-tag);
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex; align-items: center; gap: 0.6rem;
+}
+.kicker::before { content: "▌"; color: var(--accent); }
+
+h1.title {
+    font-family: var(--font-display);
+    font-size: var(--title-size);
+    font-weight: 700;
+    line-height: 1.0;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+h2.head {
+    font-family: var(--font-display);
+    font-size: var(--h2-size);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+}
+.accent { color: var(--accent); text-shadow: 0 0 18px var(--glow); }
+.amber  { color: var(--accent-2); }
+.blue   { color: var(--accent-3); }
+.dim    { color: var(--text-dim); }
+.faint  { color: var(--text-faint); }
+
+.lead {
+    font-size: var(--body-size);
+    color: var(--text-dim);
+    max-width: 62ch;
+    line-height: 1.6;
+}
+.prompt::before { content: "$ "; color: var(--accent); }
+.comment { color: var(--text-faint); }
+.comment::before { content: "# "; }
+
+/* Blinking cursor */
+.cursor {
+    display: inline-block;
+    width: 0.6ch; height: 1.05em;
+    background: var(--accent);
+    margin-left: 0.15ch;
+    transform: translateY(0.15em);
+    box-shadow: 0 0 12px var(--glow);
+    animation: blink 1.05s steps(1) infinite;
+}
+@keyframes blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
+
+/* ===========================================================================
+   COMPONENTS
+   =========================================================================== */
+/* Panel / card */
+.panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: clamp(0.8rem, 1.8vw, 1.4rem);
+    position: relative;
+}
+.panel .tl {                 /* corner tick decoration */
+    position: absolute; top: -1px; left: -1px;
+    width: 14px; height: 14px;
+    border-top: 2px solid var(--accent); border-left: 2px solid var(--accent);
+    border-top-left-radius: 10px;
+}
+
+/* Grid of tools / features */
+.grid {
+    display: grid;
+    gap: clamp(0.5rem, 1.3vw, 0.95rem);
+}
+.grid.c3 { grid-template-columns: repeat(3, 1fr); }
+.grid.c2 { grid-template-columns: repeat(2, 1fr); }
+.grid.c4 { grid-template-columns: repeat(4, 1fr); }
+
+.tool {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: clamp(0.55rem, 1.2vw, 0.95rem);
+    display: flex; flex-direction: column; gap: 0.2rem;
+    transition: border-color 0.3s var(--ease), transform 0.3s var(--ease), background 0.3s var(--ease);
+}
+.tool:hover { border-color: var(--accent); background: var(--bg-panel-2); transform: translateY(-2px); }
+.tool .name { color: var(--accent); font-weight: 600; font-size: var(--small-size); }
+.tool .desc { color: var(--text-dim); font-size: var(--mono-tag); line-height: 1.4; }
+.tool .tag  { color: var(--text-faint); font-size: var(--mono-tag); margin-top: auto; }
+
+/* Numbered principle / list rows */
+.rows { display: flex; flex-direction: column; gap: var(--element-gap); }
+.row {
+    display: grid;
+    grid-template-columns: clamp(2.4rem,5vw,3.4rem) 1fr;
+    gap: clamp(0.7rem, 1.6vw, 1.2rem);
+    align-items: baseline;
+    padding: clamp(0.5rem, 1.1vw, 0.85rem) 0;
+    border-bottom: 1px solid var(--line);
+}
+.row:last-child { border-bottom: none; }
+.row .idx { font-family: var(--font-display); font-weight: 700; color: var(--accent); font-size: var(--h3-size); }
+.row .rh  { color: var(--text); font-weight: 600; font-size: var(--body-size); }
+.row .rb  { color: var(--text-dim); font-size: var(--small-size); line-height: 1.5; }
+
+/* Code block */
+pre.code {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: clamp(0.8rem, 1.8vw, 1.3rem) clamp(1rem, 2.2vw, 1.6rem);
+    font-size: var(--small-size);
+    line-height: 1.7;
+    overflow: hidden;
+    color: var(--text);
+    white-space: pre;
+}
+pre.code .c { color: var(--text-faint); }   /* comment */
+pre.code .k { color: var(--accent-2); }      /* keyword */
+pre.code .s { color: var(--accent); }        /* string / value */
+pre.code .b { color: var(--accent-3); }      /* builtin */
+pre.code .e { color: var(--danger); }        /* error */
+
+/* Architecture flow */
+.flow {
+    display: flex; align-items: stretch; justify-content: center;
+    gap: clamp(0.4rem, 1.5vw, 1rem);
+    flex-wrap: wrap;
+}
+.flow .node {
+    flex: 1 1 0; min-width: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: clamp(0.7rem, 1.6vw, 1.3rem);
+    text-align: center;
+    display: flex; flex-direction: column; gap: 0.35rem;
+    position: relative;
+}
+.flow .node.mid { border-color: var(--accent); box-shadow: 0 0 28px var(--glow-soft); }
+.flow .node .nh { color: var(--accent); font-weight: 700; font-size: var(--body-size); }
+.flow .node .nd { color: var(--text-dim); font-size: var(--mono-tag); line-height: 1.45; }
+.flow .arrow { align-self: center; color: var(--accent); font-size: 1.3rem; }
+
+/* Stat figures */
+.stats { display: grid; grid-template-columns: repeat(4,1fr); gap: clamp(0.5rem,1.5vw,1.2rem); }
+.stat { text-align: left; border-left: 2px solid var(--accent); padding-left: clamp(0.6rem,1.2vw,1rem); }
+.stat .num { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.7rem,4.5vw,3.4rem); color: var(--text); line-height: 1; }
+.stat .num .accent { text-shadow: 0 0 22px var(--glow); }
+.stat .lab { color: var(--text-dim); font-size: var(--mono-tag); margin-top: 0.4rem; letter-spacing: 0.05em; }
+
+/* Two-column split */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(1rem,3vw,2.6rem); align-items: center; }
+
+/* Pills */
+.pills { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.pill {
+    font-size: var(--mono-tag);
+    padding: 0.28rem 0.7rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--text-dim);
+    background: var(--bg-panel);
+}
+.pill.on { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 14px var(--glow-soft); }
+
+/* check / cross lists */
+.checks { display: flex; flex-direction: column; gap: var(--element-gap); }
+.checks li { list-style: none; display: flex; gap: 0.7rem; align-items: baseline; font-size: var(--body-size); color: var(--text-dim); }
+.checks li b { color: var(--text); font-weight: 600; }
+.checks li.yes::before { content: "✓"; color: var(--accent); font-weight: 700; }
+.checks li.no::before  { content: "✕"; color: var(--danger); font-weight: 700; }
+
+/* ===========================================================================
+   REVEAL ANIMATIONS (driven by .visible added on scroll)
+   =========================================================================== */
+.reveal {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.05s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.14s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.23s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.32s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.41s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.50s; }
+.r-d1 { transition-delay: 0.1s !important; }
+.r-d2 { transition-delay: 0.2s !important; }
+.r-d3 { transition-delay: 0.3s !important; }
+
+/* stagger helper for grids */
+.slide.visible .stagger > * { animation: pop 0.6s var(--ease) both; }
+.slide.visible .stagger > *:nth-child(1){animation-delay:.10s}
+.slide.visible .stagger > *:nth-child(2){animation-delay:.16s}
+.slide.visible .stagger > *:nth-child(3){animation-delay:.22s}
+.slide.visible .stagger > *:nth-child(4){animation-delay:.28s}
+.slide.visible .stagger > *:nth-child(5){animation-delay:.34s}
+.slide.visible .stagger > *:nth-child(6){animation-delay:.40s}
+.slide.visible .stagger > *:nth-child(7){animation-delay:.46s}
+.slide.visible .stagger > *:nth-child(8){animation-delay:.52s}
+.slide.visible .stagger > *:nth-child(9){animation-delay:.58s}
+.slide.visible .stagger > *:nth-child(10){animation-delay:.64s}
+.slide.visible .stagger > *:nth-child(11){animation-delay:.70s}
+.slide.visible .stagger > *:nth-child(12){animation-delay:.76s}
+.slide.visible .stagger > *:nth-child(13){animation-delay:.82s}
+@keyframes pop { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+/* ===========================================================================
+   NAV — progress bar + dots + hint
+   =========================================================================== */
+.progress {
+    position: fixed; top: 0; left: 0; height: 2px; width: 0%;
+    background: var(--accent); box-shadow: 0 0 12px var(--glow);
+    z-index: 60; transition: width 0.2s linear;
+}
+.nav-dots {
+    position: fixed; right: clamp(0.6rem,1.6vw,1.4rem); top: 50%;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 0.62rem; z-index: 60;
+}
+.nav-dots button {
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 1px solid var(--text-faint); background: transparent;
+    cursor: pointer; padding: 0; transition: all 0.3s var(--ease);
+}
+.nav-dots button:hover { border-color: var(--accent); }
+.nav-dots button.active { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px var(--glow); transform: scale(1.25); }
+.hint {
+    position: fixed; bottom: clamp(0.6rem,1.6vh,1.2rem); left: 50%; transform: translateX(-50%);
+    font-size: var(--mono-tag); color: var(--text-faint); z-index: 60; letter-spacing: 0.05em;
+}
+.hint kbd {
+    border: 1px solid var(--line); border-radius: 4px; padding: 0.05rem 0.4rem;
+    color: var(--text-dim); background: var(--bg-panel);
+}
+
+/* ===========================================================================
+   RESPONSIVE
+   =========================================================================== */
+@media (max-height: 760px) {
+    :root { --content-gap: clamp(0.6rem,1.5vw,1.2rem); --slide-padding: clamp(1.1rem,3.5vw,3rem); }
+}
+@media (max-height: 620px) {
+    :root { --title-size: clamp(1.6rem,5vw,3rem); --h2-size: clamp(1.2rem,3vw,2rem); --content-gap: 0.5rem; }
+    .nav-dots, .hint { display: none; }
+    .statusbar { height: 1.7rem; }
+}
+@media (max-width: 820px) {
+    .grid.c3, .grid.c4 { grid-template-columns: repeat(2, 1fr); }
+    .split { grid-template-columns: 1fr; gap: 1rem; }
+    .flow { flex-direction: column; }
+    .flow .arrow { transform: rotate(90deg); }
+    .stats { grid-template-columns: repeat(2,1fr); }
+}
+@media (max-width: 560px) {
+    :root { --title-size: clamp(1.7rem, 9vw, 3rem); }
+    .grid.c3, .grid.c4, .grid.c2 { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .statusbar .right { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
+    html { scroll-behavior: auto; }
+    .cursor { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Global atmosphere -->
+<div class="fx glowfield"></div>
+<div class="fx grid"></div>
+<div class="fx scan"></div>
+<div class="fx vignette"></div>
+
+<!-- Nav chrome -->
+<div class="progress" id="progress"></div>
+<nav class="nav-dots" id="navDots"></nav>
+<div class="hint"><kbd>←</kbd> <kbd>→</kbd> / <kbd>Space</kbd> to navigate · <kbd>F</kbd> fullscreen</div>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 1 — TITLE                                                          -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="intro">
+    <div class="statusbar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="path">~/specdd-mcp</span>
+        <span class="right"><span>v0.2.0</span><span class="ok">● MCP connected</span></span>
+    </div>
+    <div class="slide-content" style="gap: var(--content-gap);">
+        <div class="kicker reveal">MCP server · Apache-2.0 · Python</div>
+        <h1 class="title reveal">specdd<span class="accent">·</span>mcp<span class="cursor"></span></h1>
+        <p class="lead reveal" style="font-size: var(--h3-size); color: var(--text);">
+            Deterministic tools that let AI agents <span class="accent">parse, resolve, validate,
+            and safely rewrite</span> SpecDD <span class="amber">.sdd</span> specification files —
+            the things an LLM can't do reliably with <span class="dim">Read</span> / <span class="dim">Edit</span>.
+        </p>
+        <div class="pills reveal" style="margin-top: 0.4rem;">
+            <span class="pill on">13 MCP tools</span>
+            <span class="pill on">4 slash commands</span>
+            <span class="pill on">1 CLI</span>
+            <span class="pill">byte-faithful writes</span>
+            <span class="pill">structured errors</span>
+        </div>
+        <div class="reveal prompt dim" style="font-size: var(--small-size); margin-top: 0.5rem;">
+            claude mcp add specdd "$(which specdd-mcp)"
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 2 — THE PROBLEM                                                    -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="problem">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">why · the gap</span><span class="right faint">01 / 12</span></div>
+    <div class="slide-content">
+        <div class="kicker reveal">The problem</div>
+        <h2 class="head reveal">LLMs are <span class="accent">unreliable</span> at structured spec work.</h2>
+        <p class="lead reveal">
+            SpecDD specs are <span class="text">binding contracts</span> — must-do, must-not, owned files,
+            dependencies, tasks, scenarios. Ask a model to chain-resolve, merge, or surgically edit them with
+            raw file tools and it drifts: mangles bytes, miscounts inheritance, invents conflicts.
+        </p>
+        <div class="grid c3 stagger reveal" style="margin-top: 0.4rem;">
+            <div class="tool"><span class="name amber">✕ Chain resolution</span><span class="desc">Walking root → target and merging inherited rules by hand is error-prone and order-sensitive.</span></div>
+            <div class="tool"><span class="name amber">✕ Byte-faithful edits</span><span class="desc">Flipping one task state with <span class="dim">Edit</span> risks clobbering BOM, CRLF, indentation, comments.</span></div>
+            <div class="tool"><span class="name amber">✕ Conflict detection</span><span class="desc">Multi-owner overlap and forbidden-dependency checks need mechanical precision, not vibes.</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 3 — WHAT IS SPECDD                                                 -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="specdd">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">concept · .sdd</span><span class="right faint">02 / 12</span></div>
+    <div class="slide-content">
+        <div class="split">
+            <div style="display:flex; flex-direction:column; gap: var(--content-gap);">
+                <div class="kicker reveal">What is SpecDD</div>
+                <h2 class="head reveal">Specs that live <span class="accent">next to the code</span> they govern.</h2>
+                <p class="lead reveal">
+                    Small <span class="amber">.sdd</span> files sit beside their code. AI agents read them as
+                    <span class="text">binding development contracts</span> — not documentation. Specs
+                    <span class="accent">inherit</span>: a feature spec sees every rule from the specs above it.
+                </p>
+                <ul class="checks reveal" style="margin-top:0.3rem;">
+                    <li class="yes"><b>Must / Must not</b> &nbsp;— hard rules, inherited down the chain</li>
+                    <li class="yes"><b>Owns</b> &nbsp;— file authority, checked before edits</li>
+                    <li class="yes"><b>Tasks &amp; Scenarios</b> &nbsp;— tracked, byte-faithfully updated</li>
+                </ul>
+            </div>
+            <div class="reveal r-d1">
+                <pre class="code"><span class="c">invoice.sdd</span>
+<span class="k">Spec:</span> Invoice Service
+<span class="k">Purpose:</span> Issue + reconcile invoices
+
+<span class="k">Must:</span>
+  <span class="s">- validate currency before persist</span>
+<span class="k">Must not:</span>
+  <span class="s">- call the ledger API directly</span>
+<span class="k">Owns:</span>
+  <span class="b">- src/billing/services/**</span>
+
+<span class="k">Tasks:</span>
+  <span class="s">[ ] #1</span> add refund path
+  <span class="s">[x] #2</span> currency guard</pre>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 4 — WHAT THIS PACKAGE IS                                           -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="package">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">what · specdd-mcp</span><span class="right faint">03 / 12</span></div>
+    <div class="slide-content">
+        <div class="kicker reveal">What this is</div>
+        <h2 class="head reveal">A <span class="accent">deterministic</span> capability layer for spec-aware agents.</h2>
+        <p class="lead reveal">Every tool does something the LLM does poorly on its own. Three surfaces, one engine.</p>
+        <div class="grid c3 stagger reveal" style="margin-top:0.5rem;">
+            <div class="tool">
+                <span class="name">MCP tools</span>
+                <span class="desc">13 passive capabilities: parse, resolve, query, validate, mutate, index — callable by any MCP client.</span>
+                <span class="tag">// the engine</span>
+            </div>
+            <div class="tool">
+                <span class="name">Slash commands</span>
+                <span class="desc"><span class="accent">/specc</span> + audit / status / draft. The active playbook that orchestrates the tools.</span>
+                <span class="tag">// the workflow</span>
+            </div>
+            <div class="tool">
+                <span class="name">CLI</span>
+                <span class="desc">serve · bootstrap · install-commands · validate · version. The human + CI path.</span>
+                <span class="tag">// the operator</span>
+            </div>
+        </div>
+        <p class="reveal comment faint" style="font-size: var(--small-size); margin-top:0.4rem;">
+            one canonical parser · one ParsedSpec shape · structured Result&lt;T&gt; on every call
+        </p>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 5 — ARCHITECTURE                                                   -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="architecture">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">architecture · how it composes</span><span class="right faint">04 / 12</span></div>
+    <div class="slide-content">
+        <div class="kicker reveal">Architecture</div>
+        <h2 class="head reveal">Command <span class="dim">→</span> server <span class="dim">→</span> <span class="accent">.sdd</span> on disk.</h2>
+        <div class="flow reveal" style="margin-top:0.6rem;">
+            <div class="node">
+                <span class="nh">/specc</span>
+                <span class="nd">Slash command. The active playbook — decides <i>what</i> to ask for.</span>
+            </div>
+            <span class="arrow">→</span>
+            <div class="node mid">
+                <span class="nh">specdd-mcp</span>
+                <span class="nd">parse · resolve · merge · list_tasks · update · scope · validate · conflicts</span>
+            </div>
+            <span class="arrow">→</span>
+            <div class="node">
+                <span class="nh">.sdd files</span>
+                <span class="nd">Binding contracts on disk. Read cheaply, written explicitly &amp; atomically.</span>
+            </div>
+        </div>
+        <div class="grid c3 stagger reveal" style="margin-top:0.7rem;">
+            <div class="tool"><span class="name">Read tools are cheap</span><span class="desc">Never mutate. Pure functions over spec bytes.</span></div>
+            <div class="tool"><span class="name">Write tools are explicit</span><span class="desc">Hash precondition + lock + atomic replace.</span></div>
+            <div class="tool"><span class="name">Repo-relative POSIX paths</span><span class="desc">Same path shape on every platform, every call.</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 6 — DESIGN PRINCIPLES                                              -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="principles">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">design · principles</span><span class="right faint">05 / 12</span></div>
+    <div class="slide-content">
+        <div class="kicker reveal">Design principles</div>
+        <h2 class="head reveal">The <span class="accent">code-better-than-LLM</span> gate.</h2>
+        <div class="rows reveal" style="margin-top:0.3rem;">
+            <div class="row"><span class="idx">01</span><div><div class="rh">Earn your place</div><div class="rb">Every tool must do something the LLM does poorly, slowly, or inconsistently. Anything trivial with <span class="dim">Read</span> is not exposed.</div></div></div>
+            <div class="row"><span class="idx">02</span><div><div class="rh">One canonical parser</div><div class="rb">All tools share a single parser and a single <span class="accent">ParsedSpec</span> shape. No divergent interpretations of the same file.</div></div></div>
+            <div class="row"><span class="idx">03</span><div><div class="rh">Structured errors, never string panics</div><div class="rb">Every call returns <span class="amber">{ ok, error, message, details }</span>. The agent can branch on <span class="accent">error</span> codes.</div></div></div>
+            <div class="row"><span class="idx">04</span><div><div class="rh">Explicit invocation over ambient magic</div><div class="rb">The workflow triggers on <span class="accent">/specc</span> — no silent heuristics. Tools are passive; the command is the active playbook.</div></div></div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 7 — THE 13 TOOLS                                                   -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="tools">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">catalog · mcp__specdd__*</span><span class="right faint">06 / 12</span></div>
+    <div class="slide-content">
+        <div class="kicker reveal">The tool catalog</div>
+        <h2 class="head reveal"><span class="accent">13</span> tools: parse → query → mutate → validate → index.</h2>
+        <div class="grid c4 stagger reveal" style="margin-top:0.4rem;">
+            <div class="tool"><span class="name">parse_spec</span><span class="desc">file/text → ParsedSpec</span><span class="tag">foundation</span></div>
+            <div class="tool"><span class="name">resolve_spec_chain</span><span class="desc">root → target order</span><span class="tag">query</span></div>
+            <div class="tool"><span class="name">get_effective_<br>constraints</span><span class="desc">merged rules + conflicts</span><span class="tag">the heart</span></div>
+            <div class="tool"><span class="name">list_tasks</span><span class="desc">cross-spec discovery</span><span class="tag">query</span></div>
+            <div class="tool"><span class="name">update_task_status</span><span class="desc">atomic batch writes</span><span class="tag">mutate</span></div>
+            <div class="tool"><span class="name">check_modification_<br>scope</span><span class="desc">pre-edit authority gate</span><span class="tag">guard</span></div>
+            <div class="tool"><span class="name">validate_spec</span><span class="desc">9 + 3 health rules</span><span class="tag">validate</span></div>
+            <div class="tool"><span class="name">list_specs</span><span class="desc">repo-wide index</span><span class="tag">index</span></div>
+            <div class="tool"><span class="name">find_ownership_<br>conflicts</span><span class="desc">multi-owner overlap</span><span class="tag">index</span></div>
+            <div class="tool"><span class="name amber">add_task</span><span class="desc">byte-faithful insert</span><span class="tag">v2</span></div>
+            <div class="tool"><span class="name amber">check_dependencies</span><span class="desc">vet vs Forbids</span><span class="tag">v2</span></div>
+            <div class="tool"><span class="name amber">create_spec</span><span class="desc">scaffold new .sdd</span><span class="tag">v2</span></div>
+            <div class="tool"><span class="name amber">bootstrap_project</span><span class="desc">init SpecDD in a repo</span><span class="tag">v2</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 8 — PARSER PIPELINE                                                -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="parser">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">internals · parser pipeline</span><span class="right faint">07 / 12</span></div>
+    <div class="slide-content">
+        <div class="split">
+            <div style="display:flex; flex-direction:column; gap: var(--content-gap);">
+                <div class="kicker reveal">One canonical parser</div>
+                <h2 class="head reveal">Pure Python. No network. <span class="accent">No surprises.</span></h2>
+                <p class="lead reveal">
+                    A staged pipeline turns raw bytes into a typed <span class="accent">ParsedSpec</span> —
+                    handling BOM, encoding, and binary detection, and <span class="text">preserving unknown
+                    sections</span> with line numbers so the format can grow.
+                </p>
+                <ul class="checks reveal">
+                    <li class="yes"><b>Position tracking</b> &nbsp;— every section carries <span class="dim">start/end line</span></li>
+                    <li class="yes"><b>Byte-faithful tasks</b> &nbsp;— each task keeps <span class="dim">indent + raw</span></li>
+                    <li class="yes"><b>Errors vs warnings</b> &nbsp;— hard fails vs soft anomalies, separated</li>
+                </ul>
+            </div>
+            <div class="reveal r-d1">
+                <pre class="code"><span class="b">parse_spec</span>(path | content)
+   <span class="c">│</span>
+   ▼
+<span class="k">lexer</span>        bytes → Line  <span class="c"># BOM, encoding</span>
+   ▼
+<span class="k">sections</span>     Lines → DetectedSection
+   ▼
+<span class="k">bullets</span>      Must / Owns / Forbids …
+<span class="k">tasks</span>        [ ] #id  <span class="c"># keep raw</span>
+<span class="k">scenarios</span>    name + steps
+   ▼
+<span class="b">ParsedSpec</span>
+   ▼
+<span class="s">Ok(spec, warnings=[…])</span> | <span class="e">Err(code)</span></pre>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 9 — BYTE-FAITHFUL WRITES                                           -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="writes">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">safety · the only write surface</span><span class="right faint">08 / 12</span></div>
+    <div class="slide-content">
+        <div class="kicker reveal">Modifying specs safely</div>
+        <h2 class="head reveal"><span class="accent">update_task_status</span> — the only write surface.</h2>
+        <p class="lead reveal">Flip a task state without touching another byte. Four guarantees make it safe under concurrent agents.</p>
+        <div class="grid c2 stagger reveal" style="margin-top:0.4rem;">
+            <div class="tool"><span class="name">Byte-faithful preservation</span><span class="desc">Only the targeted state symbol changes. Line endings, BOM, indentation, multi-byte chars, comments, blank lines — all preserved exactly.</span></div>
+            <div class="tool"><span class="name">Atomic write</span><span class="desc">Temp file + <span class="dim">os.replace</span>. A partially-written file is never observable on disk.</span></div>
+            <div class="tool"><span class="name">Stale-file detection</span><span class="desc">Requires <span class="amber">expected_content_hash</span> (SHA-256). If disk drifted, fails with <span class="dim">STALE_FILE</span> instead of clobbering.</span></div>
+            <div class="tool"><span class="name">Cross-process lock + all-or-nothing</span><span class="desc">Per-spec <span class="dim">flock</span>/<span class="dim">msvcrt</span>. Multi-update batches are whole-batch atomic — any bad id and the file is untouched.</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 10 — SURFACES: SLASH + CLI                                         -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="surfaces">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">surfaces · slash + cli</span><span class="right faint">09 / 12</span></div>
+    <div class="slide-content">
+        <div class="split">
+            <div style="display:flex; flex-direction:column; gap: var(--content-gap);">
+                <div class="kicker reveal">Two human-facing surfaces</div>
+                <h2 class="head reveal">Drive it from <span class="accent">chat</span> or the <span class="amber">shell</span>.</h2>
+                <p class="lead reveal">Slash commands are the agent playbook; the CLI is the human + CI path. Same engine underneath.</p>
+                <div class="pills reveal">
+                    <span class="pill on">/specc</span>
+                    <span class="pill on">/specc:audit</span>
+                    <span class="pill on">/specc:status</span>
+                    <span class="pill on">/specc:draft</span>
+                </div>
+            </div>
+            <div class="reveal r-d1">
+                <pre class="code"><span class="c"># start the MCP server (default)</span>
+<span class="s">$</span> specdd-mcp
+
+<span class="c"># initialize SpecDD in a repo</span>
+<span class="s">$</span> specdd-mcp bootstrap <span class="k">--with-app</span>
+
+<span class="c"># install /specc commands</span>
+<span class="s">$</span> specdd-mcp install-commands
+
+<span class="c"># CI gate — non-zero on errors</span>
+<span class="s">$</span> specdd-mcp validate ./specs
+<span class="b">✓</span> 14 specs · 0 errors · 2 warnings</pre>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 11 — QUALITY / STATUS                                              -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="status">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">status · release readiness</span><span class="right faint">10 / 12</span></div>
+    <div class="slide-content">
+        <div class="kicker reveal">Where it stands</div>
+        <h2 class="head reveal">Built to ship: <span class="accent">tested, typed, linted</span>.</h2>
+        <div class="stats reveal stagger" style="margin-top:0.5rem;">
+            <div class="stat"><div class="num"><span class="accent">13</span></div><div class="lab">MCP tools live<br>(9 v1 + 4 v2)</div></div>
+            <div class="stat"><div class="num">4</div><div class="lab">slash commands<br>specc · audit · status · draft</div></div>
+            <div class="stat"><div class="num">5</div><div class="lab">CLI subcommands<br>serve→version</div></div>
+            <div class="stat"><div class="num"><span class="accent">CI</span></div><div class="lab">pytest · ruff · mypy<br>green on each push</div></div>
+        </div>
+        <div class="grid c3 stagger reveal" style="margin-top:0.6rem;">
+            <div class="tool"><span class="name">Apache-2.0</span><span class="desc">Licensed, with packaging metadata in pyproject.toml.</span></div>
+            <div class="tool"><span class="name">e2e checklist</span><span class="desc">~5-min real-session smoke test, required before tagging a release.</span></div>
+            <div class="tool"><span class="name">v2 is additive</span><span class="desc">Same data model, same error shapes — no redesign to grow.</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- SLIDE 12 — CLOSING                                                       -->
+<!-- ======================================================================= -->
+<section class="slide" data-label="end">
+    <div class="statusbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="path">~/specdd-mcp · ready</span><span class="right"><span class="ok">● connected</span></span></div>
+    <div class="slide-content" style="align-items:flex-start;">
+        <div class="kicker reveal">Get started</div>
+        <h2 class="head reveal" style="font-size: var(--title-size);">Give your agent a<br><span class="accent">spec-aware</span> brain.</h2>
+        <div class="reveal r-d1" style="width:min(100%, 640px);">
+            <pre class="code"><span class="c"># 1 · install</span>
+<span class="s">$</span> pip install -e ".[dev]"
+<span class="c"># 2 · register with Claude Code</span>
+<span class="s">$</span> claude mcp add specdd "$(which specdd-mcp)"
+<span class="c"># 3 · verify, then work spec-first</span>
+<span class="s">$</span> /mcp        <span class="c"># specdd ● connected</span>
+<span class="s">&gt;</span> /specc add the refund path<span class="cursor"></span></pre>
+        </div>
+        <p class="lead reveal r-d2" style="margin-top:0.3rem;">
+            <span class="accent">github.com/funiJackson/SpecMCP</span> &nbsp;·&nbsp;
+            <span class="dim">DESIGN.md for the full contract</span>
+        </p>
+    </div>
+</section>
+
+<script>
+/* ===========================================================================
+   SlidePresentation — keyboard / wheel / touch nav, dots, progress, reveals.
+   Zero dependencies. Drives the .visible reveal state via IntersectionObserver.
+   =========================================================================== */
+class SlidePresentation {
+    constructor() {
+        this.slides = Array.from(document.querySelectorAll('.slide'));
+        this.current = 0;
+        this.locked = false;
+        this.buildDots();
+        this.observe();
+        this.bindKeys();
+        this.bindWheel();
+        this.bindTouch();
+        this.updateProgress();
+    }
+
+    /* Right-rail navigation dots, one per slide */
+    buildDots() {
+        const nav = document.getElementById('navDots');
+        this.slides.forEach((s, i) => {
+            const b = document.createElement('button');
+            b.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+            b.addEventListener('click', () => this.go(i));
+            nav.appendChild(b);
+        });
+        this.dots = Array.from(nav.children);
+    }
+
+    /* Reveal-on-enter + track which slide is active */
+    observe() {
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach((e) => {
+                if (e.isIntersecting) {
+                    e.target.classList.add('visible');
+                    this.current = this.slides.indexOf(e.target);
+                    this.syncDots();
+                    this.updateProgress();
+                }
+            });
+        }, { threshold: 0.55 });
+        this.slides.forEach((s) => io.observe(s));
+    }
+
+    syncDots() {
+        this.dots.forEach((d, i) => d.classList.toggle('active', i === this.current));
+    }
+
+    updateProgress() {
+        const pct = this.slides.length > 1 ? (this.current / (this.slides.length - 1)) * 100 : 0;
+        document.getElementById('progress').style.width = pct + '%';
+    }
+
+    go(i) {
+        i = Math.max(0, Math.min(this.slides.length - 1, i));
+        this.slides[i].scrollIntoView({ behavior: 'smooth' });
+    }
+    next() { this.go(this.current + 1); }
+    prev() { this.go(this.current - 1); }
+
+    bindKeys() {
+        document.addEventListener('keydown', (e) => {
+            switch (e.key) {
+                case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+                    e.preventDefault(); this.next(); break;
+                case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+                    e.preventDefault(); this.prev(); break;
+                case 'Home': e.preventDefault(); this.go(0); break;
+                case 'End': e.preventDefault(); this.go(this.slides.length - 1); break;
+                case 'f': case 'F':
+                    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+                    else document.exitFullscreen();
+                    break;
+            }
+        });
+    }
+
+    /* Wheel nav with a short lock so one gesture = one slide */
+    bindWheel() {
+        window.addEventListener('wheel', (e) => {
+            if (this.locked) return;
+            if (Math.abs(e.deltaY) < 18) return;
+            this.locked = true;
+            e.deltaY > 0 ? this.next() : this.prev();
+            setTimeout(() => { this.locked = false; }, 780);
+        }, { passive: true });
+    }
+
+    bindTouch() {
+        let y0 = null;
+        window.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+        window.addEventListener('touchend', (e) => {
+            if (y0 === null) return;
+            const dy = y0 - e.changedTouches[0].clientY;
+            if (Math.abs(dy) > 50) dy > 0 ? this.next() : this.prev();
+            y0 = null;
+        }, { passive: true });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    new SlidePresentation();
+    // Ensure the first slide reveals immediately even before scroll.
+    document.querySelector('.slide').classList.add('visible');
+});
+</script>
+</body>
+</html>
